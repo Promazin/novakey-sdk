@@ -1,6 +1,6 @@
 use soroban_sdk::{auth::Context, BytesN, Env, Vec};
 
-use crate::{crypto, error::SmartWalletError, storage, types::SignaturePayload};
+use crate::{crypto, error::SmartWalletError, nonce, storage, types::SignaturePayload};
 
 /// Custom account `__check_auth` implementation.
 ///
@@ -10,21 +10,14 @@ use crate::{crypto, error::SmartWalletError, storage, types::SignaturePayload};
 /// the requested operation".
 ///
 /// # Protocol
-/// 1. Extract `credential_id`, `signature`, and the signed `SignaturePayload`
-///    from `signature_payload` (the opaque bytes Soroban passes in).
-/// 2. Look up the stored public key for that credential.
+/// 1. Look up the credential's public key by `credential_id`.
+/// 2. Validate and atomically consume the nonce (replay protection).
 /// 3. Reconstruct the payload hash (`SHA-256(nonce_le || operation_hash)`).
 /// 4. Call the native `secp256r1_verify` host function.
-/// 5. Validate the nonce and advance it atomically.
+/// 5. Bump TTLs so the wallet stays alive.
 ///
-/// # Arguments (passed by the Soroban host)
-/// * `signature_payload` – the raw bytes the relayer attached; decoded to
-///   [`AuthPayload`] inside this function.
-/// * `auth_context`      – the list of Soroban auth-context entries that the
-///   host is authorising (unused — we verify the operation hash directly).
-///
-/// The function returns `Ok(())` on success or a [`SmartWalletError`] on any
-/// failure, which causes the host to revert the entire transaction.
+/// Returns `Ok(())` on success or a [`SmartWalletError`] on any failure,
+/// which causes the host to revert the entire transaction.
 pub fn check_auth(
     env: &Env,
     signature_payload: &AuthPayload,
@@ -34,28 +27,23 @@ pub fn check_auth(
     let credential = storage::load_credential(env, &signature_payload.credential_id)
         .ok_or(SmartWalletError::CredentialNotFound)?;
 
-    // ── 2. Validate nonce ─────────────────────────────────────────────────────
-    let current_nonce = storage::get_nonce(env);
-    if signature_payload.signed.nonce != current_nonce {
-        return Err(SmartWalletError::InvalidNonce);
-    }
+    // ── 2. Consume nonce (validates and increments atomically) ────────────────
+    nonce::consume_nonce(env, signature_payload.signed.nonce)?;
 
-    // ── 3. Reconstruct and verify payload hash ────────────────────────────────
+    // ── 3. Reconstruct payload hash ───────────────────────────────────────────
     let payload_hash = crypto::hash_payload(
         env,
         signature_payload.signed.nonce,
         &signature_payload.signed.operation_hash,
     );
 
+    // ── 4. Verify secp256r1 signature ─────────────────────────────────────────
     crypto::verify_secp256r1(
         env,
         &credential.public_key,
         &payload_hash,
         &signature_payload.signature,
     )?;
-
-    // ── 4. Advance nonce (replay protection) ──────────────────────────────────
-    storage::set_nonce(env, current_nonce + 1);
 
     // ── 5. Bump TTLs so the wallet stays alive ────────────────────────────────
     storage::bump_credential_ttl(env, &signature_payload.credential_id);
