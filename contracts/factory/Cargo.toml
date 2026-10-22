@@ -1,0 +1,15 @@
+[package]
+name = "factory"
+version = "0.1.0"
+edition = "2021"
+description = "NovaKey Factory contract — deterministic smart wallet deployment"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { version = "21.7.1", features = ["alloc", "testutils"] }
