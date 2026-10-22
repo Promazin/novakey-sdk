@@ -11,6 +11,7 @@
 
 #![no_std]
 
+mod auth;
 mod contract;
 mod crypto;
 mod error;
@@ -18,6 +19,7 @@ mod registration;
 mod storage;
 mod types;
 
+pub use auth::AuthPayload;
 pub use contract::SmartWalletContract;
 pub use error::SmartWalletError;
 pub use types::{Credential, SignaturePayload};
