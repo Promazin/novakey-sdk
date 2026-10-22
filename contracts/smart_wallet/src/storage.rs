@@ -120,3 +120,32 @@ pub fn get_nonce(env: &Env) -> u64 {
 pub fn set_nonce(env: &Env, nonce: u64) {
     env.storage().instance().set(&DataKey::Nonce, &nonce);
 }
+
+// ── Ledger TTL management ─────────────────────────────────────────────────────
+//
+// Soroban charges rent based on how long entries live. We bump the TTL of all
+// persistent entries on every successful auth so the wallet stays alive as
+// long as it is actively used.
+
+/// Minimum ledger sequences a persistent credential entry must survive.
+/// ~30 days at ~6 s/ledger on Stellar.
+const CREDENTIAL_MIN_TTL: u32 = 432_000;
+
+/// Bump the TTL of a credential entry so it survives at least `CREDENTIAL_MIN_TTL`
+/// more ledger sequences from now.
+pub fn bump_credential_ttl(env: &Env, credential_id: &BytesN<16>) {
+    env.storage().persistent().extend_ttl(
+        &DataKey::Credential(credential_id.clone()),
+        CREDENTIAL_MIN_TTL,
+        CREDENTIAL_MIN_TTL,
+    );
+}
+
+/// Bump the TTL of instance storage (owner, nonce, credential ID list).
+/// Called on every successful transaction so the wallet never expires while
+/// in active use.
+pub fn bump_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(CREDENTIAL_MIN_TTL, CREDENTIAL_MIN_TTL);
+}
