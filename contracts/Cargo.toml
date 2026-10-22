@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "smart_wallet",
     "factory",
+    "tests",
 ]
 
 [workspace.dependencies]

@@ -1,0 +1,20 @@
+[package]
+name = "novakey-tests"
+version = "0.1.0"
+edition = "2021"
+description = "Integration and unit tests for NovaKey Soroban contracts"
+license = "MIT"
+
+[dev-dependencies]
+soroban-sdk = { version = "21.7.1", features = ["alloc", "testutils"] }
+smart-wallet = { path = "../smart_wallet", features = [] }
+factory = { path = "../factory", features = [] }
+
+# The tests crate contains only test code; no library to compile.
+[[test]]
+name = "test_registration"
+path = "test_registration.rs"
+
+[[test]]
+name = "test_passkey_verification"
+path = "test_passkey_verification.rs"
