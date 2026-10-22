@@ -12,6 +12,7 @@
 #![no_std]
 
 mod contract;
+mod crypto;
 mod error;
 mod registration;
 mod storage;
