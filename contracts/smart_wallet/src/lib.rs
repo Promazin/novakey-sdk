@@ -13,6 +13,7 @@
 
 mod contract;
 mod error;
+mod registration;
 mod storage;
 mod types;
 

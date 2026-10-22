@@ -2,15 +2,10 @@ use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, Vec};
 
 use crate::{
     error::SmartWalletError,
+    registration,
     storage,
     types::{Credential, SignaturePayload},
 };
-
-/// Maximum number of passkeys a single wallet may register.
-const MAX_CREDENTIALS: u32 = 10;
-
-/// Maximum byte length of a credential label.
-const MAX_LABEL_BYTES: usize = 64;
 
 #[contract]
 pub struct SmartWalletContract;
@@ -40,21 +35,14 @@ impl SmartWalletContract {
             return Err(SmartWalletError::AlreadyInitialized);
         }
 
-        if label.len() as usize > MAX_LABEL_BYTES {
-            return Err(SmartWalletError::LabelTooLong);
-        }
-
         storage::set_initialized(&env);
         storage::set_owner(&env, &owner);
         storage::set_nonce(&env, 0);
 
-        let credential = Credential { public_key, label };
-        storage::save_credential(&env, &credential_id, &credential);
+        // Register the first credential via the dedicated registration module.
+        registration::register_credential(&env, &credential_id, &public_key, &label)?;
 
-        let mut list = storage::load_credential_ids(&env);
-        list.ids.push_back(credential_id);
-        storage::save_credential_ids(&env, &list);
-
+        storage::bump_instance_ttl(&env);
         Ok(())
     }
 
@@ -74,23 +62,8 @@ impl SmartWalletContract {
         let owner = storage::get_owner(&env).ok_or(SmartWalletError::NotInitialized)?;
         owner.require_auth();
 
-        if label.len() as usize > MAX_LABEL_BYTES {
-            return Err(SmartWalletError::LabelTooLong);
-        }
-
-        if storage::load_credential(&env, &credential_id).is_some() {
-            return Err(SmartWalletError::CredentialAlreadyExists);
-        }
-
-        let mut list = storage::load_credential_ids(&env);
-        if list.ids.len() >= MAX_CREDENTIALS {
-            return Err(SmartWalletError::MaxCredentialsReached);
-        }
-
-        let credential = Credential { public_key, label };
-        storage::save_credential(&env, &credential_id, &credential);
-        list.ids.push_back(credential_id);
-        storage::save_credential_ids(&env, &list);
+        registration::register_credential(&env, &credential_id, &public_key, &label)?;
+        storage::bump_instance_ttl(&env);
 
         Ok(())
     }
@@ -107,28 +80,8 @@ impl SmartWalletContract {
         let owner = storage::get_owner(&env).ok_or(SmartWalletError::NotInitialized)?;
         owner.require_auth();
 
-        if storage::load_credential(&env, &credential_id).is_none() {
-            return Err(SmartWalletError::CredentialNotFound);
-        }
-
-        // Guard: never remove the last key or the wallet becomes permanently locked.
-        let mut list = storage::load_credential_ids(&env);
-        if list.ids.len() <= 1 {
-            // Removing the last credential would lock the wallet forever.
-            // Return an error to prevent accidental self-lockout.
-            return Err(SmartWalletError::CredentialNotFound);
-        }
-
-        storage::remove_credential(&env, &credential_id);
-
-        // Rebuild the ID list without this entry.
-        let new_ids: Vec<BytesN<16>> = list
-            .ids
-            .iter()
-            .filter(|id| *id != credential_id)
-            .collect();
-        list.ids = new_ids;
-        storage::save_credential_ids(&env, &list);
+        registration::deregister_credential(&env, &credential_id)?;
+        storage::bump_instance_ttl(&env);
 
         Ok(())
     }
@@ -165,10 +118,15 @@ impl SmartWalletContract {
 
     // ── Internal helpers ──────────────────────────────────────────────────────
 
-    fn require_initialized(env: &Env) -> Result<(), SmartWalletError> {
+    pub(crate) fn require_initialized(env: &Env) -> Result<(), SmartWalletError> {
         if !storage::is_initialized(env) {
             return Err(SmartWalletError::NotInitialized);
         }
         Ok(())
     }
 }
+
+// Satisfy the unused-import warning for SignaturePayload – it will be used by
+// the auth module added in the next commit.
+#[allow(dead_code)]
+fn _assert_types(_: SignaturePayload) {}
