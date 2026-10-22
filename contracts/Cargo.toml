@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "smart_wallet",
+    "factory",
+]
+
+[workspace.dependencies]
+soroban-sdk = { version = "21.7.1", features = ["alloc"] }
+
+[profile.release]
+codegen-units = 1
+debug = 0
+debug-assertions = false
+opt-level = "z"
+overflow-checks = true
+panic = "abort"
+strip = "symbols"
+
+[profile.test-utils]
+inherits = "release"
+debug-assertions = true
