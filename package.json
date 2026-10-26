@@ -1,0 +1,23 @@
+{
+  "name": "novakey-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NovaKey SDK - Passkey-native smart wallet toolkit for Stellar and Soroban",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --test packages/*/tests/*.test.ts",
+    "test:contracts": "cd contracts && cargo test",
+    "build:contracts": "cd contracts && cargo build --target wasm32-unknown-unknown --release"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "passkeys",
+    "webauthn",
+    "smart-wallet",
+    "account-abstraction"
+  ],
+  "license": "MIT"
+}
