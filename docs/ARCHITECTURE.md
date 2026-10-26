@@ -1,0 +1,108 @@
+# NovaKey Architecture & Technical Specification
+
+NovaKey SDK enables seedless, non-custodial smart contract accounts on Stellar using WebAuthn / passkey hardware credentials and Soroban Protocol 21 native `secp256r1` cryptographic verification.
+
+---
+
+## 🏛️ System Overview
+
+The system architecture consists of three interconnected layers:
+
+```text
+┌─────────────────────────┐
+│     User Device         │
+│  (Secure Enclave/FIDO2) │  Biometric authentication produces secp256r1 signature
+└───────────┬─────────────┘
+            │
+            ▼ (AuthPayload via HTTP)
+┌─────────────────────────┐
+│  Gas-Sponsoring Relayer │  Wraps user payload into Soroban invocation + Fee Bump
+└───────────┬─────────────┘
+            │
+            ▼ (XDR on Stellar Ledger)
+┌─────────────────────────┐
+│  Soroban Smart Wallet   │  Native __check_auth validates signature & consumes nonce
+└─────────────────────────┘
+```
+
+---
+
+## 🔑 Cryptographic Pipeline
+
+### 1. Key Generation
+The user's device enclave generates an ECDSA keypair on the NIST P-256 (`secp256r1`) curve:
+- Private key: Never leaves the device hardware (FaceID / TouchID / TPM).
+- Public key: 65-byte uncompressed point (`0x04 || X(32) || Y(32)`).
+- Credential ID: 16-byte identifier exported during WebAuthn registration.
+
+### 2. Transaction Signing & Normalization
+When authorizing a transaction:
+1. The client retrieves the wallet's current monotonic nonce (`nonce: u64`).
+2. The client receives the 32-byte Soroban authorization payload hash (`operation_hash: BytesN<32>`).
+3. The device enclave signs the 40-byte serialized payload (`nonce_le || operation_hash`).
+4. WebAuthn returns an ASN.1 DER signature.
+5. `@novakey/core` normalizes the signature into a 64-byte compact representation `(r || s)`:
+   - If $s > \frac{n}{2}$, $s = n - s$ (enforcing low-$s$ to prevent ECDSA signature malleability).
+
+### 3. On-Chain Verification (`__check_auth`)
+Soroban routes authorization through the contract's custom account entry point:
+```rust
+fn __check_auth(
+    env: Env,
+    signature_payload: Hash<32>,
+    signatures: AuthPayload,
+    auth_contexts: Vec<Context>,
+) -> Result<(), SmartWalletError>
+```
+
+Verification protocol:
+1. **Operation Integrity:** Ensures `signature_payload` from the Soroban host equals `signatures.signed.operation_hash`.
+2. **Replay Protection:** Ensures `signatures.signed.nonce` equals contract's current nonce; increments nonce atomically.
+3. **secp256r1 Verification:** Calls Stellar Protocol 21 native host function:
+   ```rust
+   env.crypto().secp256r1_verify(public_key, payload_hash, signature)
+   ```
+4. **State TTL Extension:** Bumps storage entry TTL so the account remains active indefinitely under active use.
+
+---
+
+## 🏭 Deterministic Wallet Deployment
+
+The `FactoryContract` deploys individual user wallets deterministically using Soroban's address derivation API:
+
+$$\text{salt} = \text{SHA-256}(\text{credential\_id})$$
+$$\text{wallet\_address} = \text{deployer}(\text{factory\_address}, \text{salt})$$
+
+Benefits:
+- **Zero-lookup client resolution:** The client SDK predicts the wallet address before submitting the deployment transaction.
+- **Counterfactual account funding:** Applications can transfer stablecoins to the predicted address before the user ever deploys the contract code.
+
+---
+
+## 🛡️ Account Recovery (Guardian Model)
+
+If a user loses all registered passkeys, NovaKey provides non-custodial social recovery:
+1. The wallet owner registers a trusted `guardian: Address` via `set_guardian`.
+2. The guardian can trigger `recover_wallet(new_credential_id, new_public_key, new_label)`:
+   - Requires `guardian.require_auth()`.
+   - Clears all existing registered credentials.
+   - Installs the new passkey credential as the sole active key.
+   - Advances the wallet nonce by $+1$ to invalidate any pending unexecuted signatures.
+   - Emits a `wallet_recovered` contract event.
+
+---
+
+## 📡 Event Architecture
+
+Both `SmartWalletContract` and `FactoryContract` emit structured contract events:
+
+| Contract | Event Topic | Event Data | Purpose |
+| :--- | :--- | :--- | :--- |
+| `SmartWallet` | `("credential_registered", credential_id)` | `label` | Passkey added |
+| `SmartWallet` | `("credential_removed", credential_id)` | `()` | Passkey removed |
+| `SmartWallet` | `("auth_success", credential_id)` | `(nonce, operation_hash)` | Transaction authorized |
+| `SmartWallet` | `("guardian_set", guardian)` | `()` | Recovery guardian set |
+| `SmartWallet` | `("guardian_removed", ())` | `()` | Recovery guardian removed |
+| `SmartWallet` | `("wallet_recovered", guardian)` | `new_credential_id` | Wallet recovered |
+| `Factory` | `("wallet_deployed", owner)` | `(wallet_address, credential_id)` | Wallet deployed |
+| `Factory` | `("wasm_updated", admin)` | `new_wasm_hash` | Smart wallet WASM upgraded |

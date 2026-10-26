@@ -189,48 +189,57 @@ export function SendFunds() {
 }
 ```
 
-### 4. Account Recovery (WIP)
-NovaKey supports social recovery and guardian configurations natively within the smart contract. 
-*(Detailed documentation on the `useRecovery` hook is coming in v1.1).*
+### 4. Account Recovery
+NovaKey supports social recovery and guardian configurations natively within the smart contract.
+
+- **Set Guardian:** The wallet owner can designate a trusted recovery guardian (`set_guardian`).
+- **Execute Recovery:** If all passkeys are lost, the guardian can authorize `recover_wallet` to replace the lost credentials with a new passkey.
+- **Nonce Invalidation:** Recovery automatically advances the monotonic nonce by `+1`, invalidating any stale or intercepted signatures.
+
+For full cryptographic and security specifications, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
 ## 🛠️ Local Development & Testing
 
-To contribute to the NovaKey monorepo or test the smart contracts locally:
+To develop and test across the repository:
 
-1. **Clone the repo:**
+1. **Clone and install dependencies:**
    ```bash
    git clone https://github.com/your-org/novakey-sdk.git
    cd novakey-sdk
-   pnpm install
    ```
 
-2. **Compile the Smart Contracts:**
+2. **Run TypeScript SDK Tests:**
+   ```bash
+   npm test
+   ```
+
+3. **Run Smart Contract Tests:**
    ```bash
    cd contracts
-   make build
-   # Outputs optimized .wasm files in /target
-   ```
-
-3. **Run Contract Tests:**
-   ```bash
    cargo test
    ```
 
-4. **Start the Local Next.js Demo App:**
+4. **Compile Smart Contracts to WebAssembly:**
    ```bash
-   cd ../apps/demo-web
-   pnpm dev
+   cd contracts
+   make build
+   # Outputs optimized .wasm binaries in target/wasm32-unknown-unknown/release
+   ```
+
+5. **Run Example Flow:**
+   ```bash
+   node examples/basic-wallet-flow.ts
    ```
 
 ---
 
 ## 🗺️ Roadmap 
 
-- **Phase 1 (Completed):** Core Rust Smart Contract modifications utilizing OpenZeppelin Account architecture; local passkey verification tests.
-- **Phase 2 (Current):** TypeScript core SDK (`@novakey/core`) bridging WebAuthn to Soroban XDR payloads.
-- **Phase 3 (Upcoming):** `@novakey/react` wrapper, complete open-source relayer node server, and Testnet beta launch.
+- **Phase 1 (Completed):** Core Rust Smart Contract architecture, native `secp256r1` verification, deterministic factory deployment, guardian recovery, contract event system, and integration test suites.
+- **Phase 2 (Completed):** TypeScript core SDK (`@novakey/core`) bridging WebAuthn assertions to Soroban authorization payloads, low-s signature normalization, deterministic address derivation, and unit tests.
+- **Phase 3 (Current):** `@novakey/react` wrapper, complete open-source relayer node server, and Testnet beta launch.
 - **Phase 4 (Target: Q2):** React Native (iOS/Android) native biometrics bridge, third-party security audits, and Stellar Mainnet deployment.
 
 ---
