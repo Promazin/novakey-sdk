@@ -21,6 +21,6 @@ mod storage;
 mod types;
 
 pub use auth::AuthPayload;
-pub use contract::SmartWalletContract;
+pub use contract::{SmartWalletContract, SmartWalletContractClient};
 pub use error::SmartWalletError;
 pub use types::{Credential, SignaturePayload};

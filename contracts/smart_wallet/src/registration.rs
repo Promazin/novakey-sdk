@@ -69,16 +69,17 @@ pub fn deregister_credential(
 
     // Prevent permanent self-lockout.
     if list.ids.len() <= 1 {
-        return Err(SmartWalletError::CredentialNotFound);
+        return Err(SmartWalletError::CannotRemoveLastCredential);
     }
 
     storage::remove_credential(env, credential_id);
 
-    let new_ids = list
-        .ids
-        .iter()
-        .filter(|id| *id != *credential_id)
-        .collect();
+    let mut new_ids = soroban_sdk::Vec::new(env);
+    for id in list.ids.iter() {
+        if id != *credential_id {
+            new_ids.push_back(id);
+        }
+    }
     list.ids = new_ids;
     storage::save_credential_ids(env, &list);
 

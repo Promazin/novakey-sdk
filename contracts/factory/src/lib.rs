@@ -23,5 +23,5 @@ mod contract;
 mod error;
 mod storage;
 
-pub use contract::FactoryContract;
+pub use contract::{FactoryContract, FactoryContractClient};
 pub use error::FactoryError;

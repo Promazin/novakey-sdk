@@ -59,23 +59,22 @@ impl TestKey {
         TestKey { signing_key, public_key_bytes: pk }
     }
 
-    /// Sign a payload hash and return compact (r || s) bytes.
-    fn sign(&self, hash: &[u8; 32]) -> [u8; 64] {
-        let sig: Signature = self.signing_key.sign(hash);
+    /// Sign payload bytes. `Signer::sign` hashes `raw` with SHA-256 and signs the digest.
+    fn sign(&self, raw: &[u8; 40]) -> [u8; 64] {
+        let sig: Signature = self.signing_key.sign(raw);
         let mut out = [0u8; 64];
         out.copy_from_slice(&sig.to_bytes());
         out
     }
 }
 
-// ── SHA-256 helper (mirrors `crypto::hash_payload`) ───────────────────────────
+// ── Payload helper (40 bytes: 8 bytes LE nonce + 32 bytes op_hash) ─────────────
 
-fn hash_payload_local(nonce: u64, op_hash: &[u8; 32]) -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(nonce.to_le_bytes());
-    hasher.update(op_hash);
-    hasher.finalize().into()
+fn raw_payload_bytes(nonce: u64, op_hash: &[u8; 32]) -> [u8; 40] {
+    let mut data = [0u8; 40];
+    data[..8].copy_from_slice(&nonce.to_le_bytes());
+    data[8..].copy_from_slice(op_hash);
+    data
 }
 
 // ── Fake byte helpers ─────────────────────────────────────────────────────────
@@ -86,28 +85,20 @@ fn fake_cred_id(env: &Env, seed: u8) -> BytesN<16> {
     BytesN::from_array(env, &raw)
 }
 
-fn fake_op_hash(env: &Env, seed: u8) -> BytesN<32> {
-    let mut raw = [0u8; 32];
-    raw[0] = seed;
-    BytesN::from_array(env, &raw)
-}
-
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
-fn setup_with_key(env: &Env, key: &TestKey) -> (SmartWalletContractClient, BytesN<16>) {
+fn setup_with_key<'a>(env: &'a Env, key: &TestKey) -> (SmartWalletContractClient<'a>, BytesN<16>) {
     let contract_id = env.register_contract(None, SmartWalletContract);
     let client = SmartWalletContractClient::new(env, &contract_id);
     let owner = Address::generate(env);
     let cred_id = fake_cred_id(env, 1);
 
-    client
-        .initialize(
-            &owner,
-            &cred_id,
-            &BytesN::from_array(env, &key.public_key_bytes),
-            &Bytes::from_slice(env, b"Test Device"),
-        )
-        .unwrap();
+    client.initialize(
+        &owner,
+        &cred_id,
+        &BytesN::from_array(env, &key.public_key_bytes),
+        &Bytes::from_slice(env, b"Test Device"),
+    );
 
     (client, cred_id)
 }
@@ -121,10 +112,10 @@ fn test_check_auth_valid_signature_advances_nonce() {
     let key = TestKey::new();
     let (client, cred_id) = setup_with_key(&env, &key);
 
-    let nonce = client.get_nonce().unwrap(); // should be 0
+    let nonce = client.get_nonce(); // should be 0
     let op_hash_raw = [0xabu8; 32];
-    let payload_hash = hash_payload_local(nonce, &op_hash_raw);
-    let sig_bytes = key.sign(&payload_hash);
+    let raw_payload = raw_payload_bytes(nonce, &op_hash_raw);
+    let sig_bytes = key.sign(&raw_payload);
 
     let auth_payload = AuthPayload {
         credential_id: cred_id,
@@ -135,14 +126,9 @@ fn test_check_auth_valid_signature_advances_nonce() {
         signature: BytesN::from_array(&env, &sig_bytes),
     };
 
-    // Drive __check_auth through the test harness.
-    env.mock_all_auths();
-    // We verify behaviour by checking nonce advancement after a direct call;
-    // full host-level auth routing is exercised in Soroban simulator tests.
-    // Here we call the internal function via a test shim below.
     check_auth_shim(&env, &client, auth_payload).unwrap();
 
-    assert_eq!(client.get_nonce().unwrap(), 1);
+    assert_eq!(client.get_nonce(), 1);
 }
 
 /// Replay: re-submitting the same payload after it has been consumed is rejected.
@@ -153,10 +139,10 @@ fn test_check_auth_replay_is_rejected() {
     let (client, cred_id) = setup_with_key(&env, &key);
     env.mock_all_auths();
 
-    let nonce = client.get_nonce().unwrap();
+    let nonce = client.get_nonce();
     let op_hash_raw = [0xbbu8; 32];
-    let payload_hash = hash_payload_local(nonce, &op_hash_raw);
-    let sig_bytes = key.sign(&payload_hash);
+    let raw_payload = raw_payload_bytes(nonce, &op_hash_raw);
+    let sig_bytes = key.sign(&raw_payload);
 
     let auth_payload = AuthPayload {
         credential_id: cred_id.clone(),
@@ -181,15 +167,15 @@ fn test_check_auth_wrong_signature_is_rejected() {
     let key = TestKey::new();
     let (client, cred_id) = setup_with_key(&env, &key);
 
-    let nonce = client.get_nonce().unwrap();
+    let nonce = client.get_nonce();
     let op_hash_raw = [0xccu8; 32];
-    let payload_hash = hash_payload_local(nonce, &op_hash_raw);
+    let raw_payload = raw_payload_bytes(nonce, &op_hash_raw);
 
     // Sign with a *different* key (all-ones scalar — not the registered key).
     let wrong_scalar = [0x01u8; 32];
     let wrong_secret = SecretKey::from_bytes((&wrong_scalar).into()).unwrap();
     let wrong_signing = SigningKey::from(wrong_secret);
-    let wrong_sig: p256::ecdsa::Signature = wrong_signing.sign(&payload_hash);
+    let wrong_sig: p256::ecdsa::Signature = wrong_signing.sign(&raw_payload);
     let mut sig_bytes = [0u8; 64];
     sig_bytes.copy_from_slice(&wrong_sig.to_bytes());
 
@@ -213,10 +199,10 @@ fn test_check_auth_unknown_credential_is_rejected() {
     let key = TestKey::new();
     let (client, _) = setup_with_key(&env, &key);
 
-    let nonce = client.get_nonce().unwrap();
+    let nonce = client.get_nonce();
     let op_hash_raw = [0xddu8; 32];
-    let payload_hash = hash_payload_local(nonce, &op_hash_raw);
-    let sig_bytes = key.sign(&payload_hash);
+    let raw_payload = raw_payload_bytes(nonce, &op_hash_raw);
+    let sig_bytes = key.sign(&raw_payload);
 
     let auth_payload = AuthPayload {
         // Use credential ID 99 — not registered
@@ -241,8 +227,8 @@ fn test_check_auth_wrong_nonce_is_rejected() {
 
     let op_hash_raw = [0xeeu8; 32];
     let bad_nonce: u64 = 5; // contract is at nonce 0
-    let payload_hash = hash_payload_local(bad_nonce, &op_hash_raw);
-    let sig_bytes = key.sign(&payload_hash);
+    let raw_payload = raw_payload_bytes(bad_nonce, &op_hash_raw);
+    let sig_bytes = key.sign(&raw_payload);
 
     let auth_payload = AuthPayload {
         credential_id: cred_id,
@@ -257,25 +243,64 @@ fn test_check_auth_wrong_nonce_is_rejected() {
     assert_eq!(result.unwrap_err(), SmartWalletError::InvalidNonce);
 }
 
+/// Mismatched operation hash: payload signed for a different op_hash than requested.
+#[test]
+fn test_check_auth_mismatched_operation_hash_is_rejected() {
+    let env = Env::default();
+    let key = TestKey::new();
+    let (client, cred_id) = setup_with_key(&env, &key);
+
+    let nonce = client.get_nonce();
+    let op_hash_raw = [0xa1u8; 32];
+    let raw_payload = raw_payload_bytes(nonce, &op_hash_raw);
+    let sig_bytes = key.sign(&raw_payload);
+
+    let auth_payload = AuthPayload {
+        credential_id: cred_id,
+        signed: SignaturePayload {
+            nonce,
+            operation_hash: BytesN::from_array(&env, &op_hash_raw),
+        },
+        signature: BytesN::from_array(&env, &sig_bytes),
+    };
+
+    // Simulate host requesting auth for a DIFFERENT operation hash (0xb2)
+    use soroban_sdk::{IntoVal, Vec};
+    let host_op_hash = BytesN::from_array(&env, &[0xb2u8; 32]);
+    let auth_context: Vec<soroban_sdk::auth::Context> = Vec::new(&env);
+    let res = env.try_invoke_contract_check_auth::<SmartWalletError>(
+        &client.address,
+        &host_op_hash,
+        auth_payload.into_val(&env),
+        &auth_context,
+    );
+
+    assert_eq!(res, Err(Ok(SmartWalletError::InvalidOperationHash)));
+}
+
 // ── Test shim ─────────────────────────────────────────────────────────────────
 //
-// The Soroban test environment does not yet expose a public API for calling
-// `__check_auth` directly on a client. We work around this by using the
-// `invoke_contract` test utility to call the function by symbol name, which
-// is equivalent to what the host does during transaction simulation.
+// Leverages `try_invoke_contract_check_auth` to invoke the contract's
+// `__check_auth` through the Soroban host environment.
 
 fn check_auth_shim(
     env: &Env,
     client: &SmartWalletContractClient,
     payload: AuthPayload,
 ) -> Result<(), SmartWalletError> {
-    use soroban_sdk::{Symbol, Val, Vec};
+    use soroban_sdk::{IntoVal, Vec};
 
-    let args: Vec<Val> = (payload,).into_val(env);
-
-    env.invoke_contract::<Result<(), SmartWalletError>>(
+    let auth_context: Vec<soroban_sdk::auth::Context> = Vec::new(env);
+    let res = env.try_invoke_contract_check_auth::<SmartWalletError>(
         &client.address,
-        &Symbol::new(env, "__check_auth"),
-        args,
-    )
+        &payload.signed.operation_hash,
+        payload.into_val(env),
+        &auth_context,
+    );
+
+    match res {
+        Ok(()) => Ok(()),
+        Err(Ok(err)) => Err(err),
+        Err(Err(_invoke_err)) => Err(SmartWalletError::InvalidSignature),
+    }
 }

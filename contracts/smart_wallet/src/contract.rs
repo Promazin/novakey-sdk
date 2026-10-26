@@ -130,6 +130,7 @@ impl SmartWalletContract {
 // here instead of requiring a classic ed25519 signature.
 
 use soroban_sdk::auth::CustomAccountInterface;
+use soroban_sdk::crypto::Hash;
 
 #[contractimpl]
 impl CustomAccountInterface for SmartWalletContract {
@@ -141,11 +142,12 @@ impl CustomAccountInterface for SmartWalletContract {
     /// Returns `Ok(())` to approve, or a [`SmartWalletError`] to reject.
     fn __check_auth(
         env: Env,
-        signature_payload: AuthPayload,
+        signature_payload: Hash<32>,
+        signatures: AuthPayload,
         auth_context: Vec<Context>,
     ) -> Result<(), SmartWalletError> {
         Self::require_initialized(&env)?;
-        check_auth(&env, &signature_payload, &auth_context)
+        check_auth(&env, &signature_payload, &signatures, &auth_context)
     }
 }
 

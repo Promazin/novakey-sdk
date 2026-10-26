@@ -75,17 +75,17 @@ impl FactoryContract {
         let wallet_address = env
             .deployer()
             .with_current_contract(salt)
-            .deploy_v2(wasm_hash, ());
+            .deploy(wasm_hash);
 
         // Initialise the freshly deployed wallet.
         // We call its `initialize` function via a cross-contract call.
-        let init_args: Vec<Val> = (
-            owner.clone(),
-            credential_id.clone(),
-            public_key,
-            label,
-        )
-            .into_val(&env);
+        let init_args: Vec<Val> = soroban_sdk::vec![
+            &env,
+            owner.to_val(),
+            credential_id.to_val(),
+            public_key.to_val(),
+            label.to_val(),
+        ];
 
         env.invoke_contract::<()>(
             &wallet_address,
@@ -160,6 +160,6 @@ impl FactoryContract {
     /// `salt = SHA-256(credential_id_bytes)`
     fn derive_salt(env: &Env, credential_id: &BytesN<16>) -> BytesN<32> {
         let cred_bytes: Bytes = credential_id.clone().into();
-        env.crypto().sha256(&cred_bytes)
+        env.crypto().sha256(&cred_bytes).into()
     }
 }

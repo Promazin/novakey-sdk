@@ -6,7 +6,7 @@ use soroban_sdk::{contracttype, Bytes, BytesN};
 /// (`04 || x || y`) exported from the device's Secure Enclave during
 /// WebAuthn registration.
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Credential {
     /// Uncompressed secp256r1 public key (65 bytes: 0x04 || X || Y).
     pub public_key: BytesN<65>,
@@ -19,7 +19,7 @@ pub struct Credential {
 /// This mirrors the WebAuthn `clientDataJSON` + `authenticatorData` structure
 /// but reduced to what the on-chain verifier needs.
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignaturePayload {
     /// Nonce prevents replay attacks. Must equal the contract's current nonce.
     pub nonce: u64,

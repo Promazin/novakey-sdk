@@ -27,4 +27,6 @@ pub enum SmartWalletError {
     LabelTooLong = 8,
     /// Maximum number of credentials per wallet has been reached.
     MaxCredentialsReached = 9,
+    /// Cannot remove the last registered credential to prevent self-lockout.
+    CannotRemoveLastCredential = 10,
 }

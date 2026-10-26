@@ -33,19 +33,17 @@ fn fake_cred_id(env: &Env, seed: u8) -> BytesN<16> {
 }
 
 /// Deploy a fresh SmartWallet and return (client, owner_address).
-fn setup(env: &Env) -> (SmartWalletContractClient, Address) {
+fn setup<'a>(env: &'a Env) -> (SmartWalletContractClient<'a>, Address) {
     let contract_id = env.register_contract(None, SmartWalletContract);
     let client = SmartWalletContractClient::new(env, &contract_id);
     let owner = Address::generate(env);
 
-    client
-        .initialize(
-            &owner,
-            &fake_cred_id(env, 1),
-            &fake_pubkey(env, 1),
-            &Bytes::from_slice(env, b"iPhone 15 FaceID"),
-        )
-        .unwrap();
+    client.initialize(
+        &owner,
+        &fake_cred_id(env, 1),
+        &fake_pubkey(env, 1),
+        &Bytes::from_slice(env, b"iPhone 15 FaceID"),
+    );
 
     (client, owner)
 }
@@ -56,21 +54,21 @@ fn setup(env: &Env) -> (SmartWalletContractClient, Address) {
 fn test_initialize_sets_owner() {
     let env = Env::default();
     let (client, owner) = setup(&env);
-    assert_eq!(client.owner().unwrap(), owner);
+    assert_eq!(client.owner(), owner);
 }
 
 #[test]
 fn test_initialize_sets_nonce_to_zero() {
     let env = Env::default();
     let (client, _) = setup(&env);
-    assert_eq!(client.get_nonce().unwrap(), 0);
+    assert_eq!(client.get_nonce(), 0);
 }
 
 #[test]
 fn test_initialize_registers_first_credential() {
     let env = Env::default();
     let (client, _) = setup(&env);
-    let ids = client.list_credentials().unwrap();
+    let ids = client.list_credentials();
     assert_eq!(ids.len(), 1);
     assert_eq!(ids.get(0).unwrap(), fake_cred_id(&env, 1));
 }
@@ -80,14 +78,14 @@ fn test_initialize_returns_error_if_called_twice() {
     let env = Env::default();
     let (client, owner) = setup(&env);
 
-    let result = client.initialize(
+    let result = client.try_initialize(
         &owner,
         &fake_cred_id(&env, 2),
         &fake_pubkey(&env, 2),
         &Bytes::from_slice(&env, b"second call"),
     );
 
-    assert_eq!(result.unwrap_err(), SmartWalletError::AlreadyInitialized);
+    assert_eq!(result, Err(Ok(SmartWalletError::AlreadyInitialized)));
 }
 
 #[test]
@@ -100,14 +98,14 @@ fn test_initialize_rejects_label_too_long() {
     // 65-byte label — one byte over the 64-byte limit
     let long_label = Bytes::from_slice(&env, &[b'x'; 65]);
 
-    let result = client.initialize(
+    let result = client.try_initialize(
         &owner,
         &fake_cred_id(&env, 1),
         &fake_pubkey(&env, 1),
         &long_label,
     );
 
-    assert_eq!(result.unwrap_err(), SmartWalletError::LabelTooLong);
+    assert_eq!(result, Err(Ok(SmartWalletError::LabelTooLong)));
 }
 
 // ── add_credential ────────────────────────────────────────────────────────────
@@ -118,15 +116,13 @@ fn test_add_credential_increases_count() {
     env.mock_all_auths();
     let (client, _) = setup(&env);
 
-    client
-        .add_credential(
-            &fake_cred_id(&env, 2),
-            &fake_pubkey(&env, 2),
-            &Bytes::from_slice(&env, b"Pixel 8 Fingerprint"),
-        )
-        .unwrap();
+    client.add_credential(
+        &fake_cred_id(&env, 2),
+        &fake_pubkey(&env, 2),
+        &Bytes::from_slice(&env, b"Pixel 8 Fingerprint"),
+    );
 
-    assert_eq!(client.list_credentials().unwrap().len(), 2);
+    assert_eq!(client.list_credentials().len(), 2);
 }
 
 #[test]
@@ -136,13 +132,13 @@ fn test_add_credential_rejects_duplicate_id() {
     let (client, _) = setup(&env);
 
     // credential ID 1 was registered in setup()
-    let result = client.add_credential(
+    let result = client.try_add_credential(
         &fake_cred_id(&env, 1),
         &fake_pubkey(&env, 99),
         &Bytes::from_slice(&env, b"duplicate"),
     );
 
-    assert_eq!(result.unwrap_err(), SmartWalletError::CredentialAlreadyExists);
+    assert_eq!(result, Err(Ok(SmartWalletError::CredentialAlreadyExists)));
 }
 
 #[test]
@@ -151,13 +147,13 @@ fn test_add_credential_rejects_label_too_long() {
     env.mock_all_auths();
     let (client, _) = setup(&env);
 
-    let result = client.add_credential(
+    let result = client.try_add_credential(
         &fake_cred_id(&env, 3),
         &fake_pubkey(&env, 3),
         &Bytes::from_slice(&env, &[b'a'; 65]),
     );
 
-    assert_eq!(result.unwrap_err(), SmartWalletError::LabelTooLong);
+    assert_eq!(result, Err(Ok(SmartWalletError::LabelTooLong)));
 }
 
 #[test]
@@ -168,25 +164,23 @@ fn test_add_credential_enforces_max_limit() {
 
     // Add credentials 2–10 (9 more, total 10)
     for seed in 2u8..=10 {
-        client
-            .add_credential(
-                &fake_cred_id(&env, seed),
-                &fake_pubkey(&env, seed),
-                &Bytes::from_slice(&env, b"device"),
-            )
-            .unwrap();
+        client.add_credential(
+            &fake_cred_id(&env, seed),
+            &fake_pubkey(&env, seed),
+            &Bytes::from_slice(&env, b"device"),
+        );
     }
 
-    assert_eq!(client.list_credentials().unwrap().len(), 10);
+    assert_eq!(client.list_credentials().len(), 10);
 
     // The 11th should fail
-    let result = client.add_credential(
+    let result = client.try_add_credential(
         &fake_cred_id(&env, 11),
         &fake_pubkey(&env, 11),
         &Bytes::from_slice(&env, b"overflow"),
     );
 
-    assert_eq!(result.unwrap_err(), SmartWalletError::MaxCredentialsReached);
+    assert_eq!(result, Err(Ok(SmartWalletError::MaxCredentialsReached)));
 }
 
 // ── remove_credential ─────────────────────────────────────────────────────────
@@ -198,17 +192,15 @@ fn test_remove_credential_decreases_count() {
     let (client, _) = setup(&env);
 
     // Add a second credential so we can remove one without hitting the lock guard.
-    client
-        .add_credential(
-            &fake_cred_id(&env, 2),
-            &fake_pubkey(&env, 2),
-            &Bytes::from_slice(&env, b"second device"),
-        )
-        .unwrap();
+    client.add_credential(
+        &fake_cred_id(&env, 2),
+        &fake_pubkey(&env, 2),
+        &Bytes::from_slice(&env, b"second device"),
+    );
 
-    client.remove_credential(&fake_cred_id(&env, 2)).unwrap();
+    client.remove_credential(&fake_cred_id(&env, 2));
 
-    assert_eq!(client.list_credentials().unwrap().len(), 1);
+    assert_eq!(client.list_credentials().len(), 1);
 }
 
 #[test]
@@ -217,8 +209,8 @@ fn test_remove_last_credential_is_rejected() {
     env.mock_all_auths();
     let (client, _) = setup(&env); // only 1 credential
 
-    let result = client.remove_credential(&fake_cred_id(&env, 1));
-    assert_eq!(result.unwrap_err(), SmartWalletError::CredentialNotFound);
+    let result = client.try_remove_credential(&fake_cred_id(&env, 1));
+    assert_eq!(result, Err(Ok(SmartWalletError::CannotRemoveLastCredential)));
 }
 
 #[test]
@@ -227,8 +219,8 @@ fn test_remove_nonexistent_credential_is_rejected() {
     env.mock_all_auths();
     let (client, _) = setup(&env);
 
-    let result = client.remove_credential(&fake_cred_id(&env, 99));
-    assert_eq!(result.unwrap_err(), SmartWalletError::CredentialNotFound);
+    let result = client.try_remove_credential(&fake_cred_id(&env, 99));
+    assert_eq!(result, Err(Ok(SmartWalletError::CredentialNotFound)));
 }
 
 // ── get_credential ────────────────────────────────────────────────────────────
@@ -238,7 +230,7 @@ fn test_get_credential_returns_correct_pubkey() {
     let env = Env::default();
     let (client, _) = setup(&env);
 
-    let cred = client.get_credential(&fake_cred_id(&env, 1)).unwrap();
+    let cred = client.get_credential(&fake_cred_id(&env, 1));
     assert_eq!(cred.public_key, fake_pubkey(&env, 1));
 }
 
@@ -247,8 +239,8 @@ fn test_get_credential_returns_error_for_unknown_id() {
     let env = Env::default();
     let (client, _) = setup(&env);
 
-    let result = client.get_credential(&fake_cred_id(&env, 42));
-    assert_eq!(result.unwrap_err(), SmartWalletError::CredentialNotFound);
+    let result = client.try_get_credential(&fake_cred_id(&env, 42));
+    assert_eq!(result, Err(Ok(SmartWalletError::CredentialNotFound)));
 }
 
 // ── uninitialized guard ───────────────────────────────────────────────────────
@@ -259,6 +251,6 @@ fn test_get_nonce_on_uninitialised_wallet_returns_error() {
     let contract_id = env.register_contract(None, SmartWalletContract);
     let client = SmartWalletContractClient::new(&env, &contract_id);
 
-    let result = client.get_nonce();
-    assert_eq!(result.unwrap_err(), SmartWalletError::NotInitialized);
+    let result = client.try_get_nonce();
+    assert_eq!(result, Err(Ok(SmartWalletError::NotInitialized)));
 }

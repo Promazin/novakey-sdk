@@ -1,0 +1,20 @@
+# Rust
+target/
+**/*.rs.bk
+test_snapshots/
+
+# Node & TypeScript
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Environment & local secrets
+.env
+.env*.local
+
+# IDE & OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
