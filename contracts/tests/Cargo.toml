@@ -20,3 +20,7 @@ path = "test_registration.rs"
 [[test]]
 name = "test_passkey_verification"
 path = "test_passkey_verification.rs"
+
+[[test]]
+name = "test_factory"
+path = "test_factory.rs"
