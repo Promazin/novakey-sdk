@@ -18,7 +18,7 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::Address as _,
+    testutils::{Address as _, Events as _},
     Address, Bytes, BytesN, Env,
 };
 
@@ -276,6 +276,32 @@ fn test_check_auth_mismatched_operation_hash_is_rejected() {
     );
 
     assert_eq!(res, Err(Ok(SmartWalletError::InvalidOperationHash)));
+}
+
+#[test]
+fn test_auth_publishes_success_event() {
+    let env = Env::default();
+    let key = TestKey::new();
+    let (client, cred_id) = setup_with_key(&env, &key);
+
+    let nonce = client.get_nonce();
+    let op_hash_raw = [0x55u8; 32];
+    let raw_payload = raw_payload_bytes(nonce, &op_hash_raw);
+    let sig_bytes = key.sign(&raw_payload);
+
+    let auth_payload = AuthPayload {
+        credential_id: cred_id,
+        signed: SignaturePayload {
+            nonce,
+            operation_hash: BytesN::from_array(&env, &op_hash_raw),
+        },
+        signature: BytesN::from_array(&env, &sig_bytes),
+    };
+
+    check_auth_shim(&env, &client, auth_payload).unwrap();
+
+    let events = env.events().all();
+    assert!(events.len() >= 2);
 }
 
 // ── Test shim ─────────────────────────────────────────────────────────────────

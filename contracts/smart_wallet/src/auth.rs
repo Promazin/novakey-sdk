@@ -1,6 +1,6 @@
 use soroban_sdk::{auth::Context, crypto::Hash, BytesN, Env, Vec};
 
-use crate::{crypto, error::SmartWalletError, nonce, storage, types::SignaturePayload};
+use crate::{crypto, error::SmartWalletError, events, nonce, storage, types::SignaturePayload};
 
 /// Custom account `__check_auth` implementation.
 ///
@@ -56,6 +56,14 @@ pub fn check_auth(
     // ── 5. Bump TTLs so the wallet stays alive ────────────────────────────────
     storage::bump_credential_ttl(env, &auth_payload.credential_id);
     storage::bump_instance_ttl(env);
+
+    // ── 6. Emit auth success event ────────────────────────────────────────────
+    events::auth_success(
+        env,
+        &auth_payload.credential_id,
+        auth_payload.signed.nonce,
+        &auth_payload.signed.operation_hash,
+    );
 
     Ok(())
 }

@@ -2,6 +2,7 @@ use soroban_sdk::{Bytes, BytesN, Env};
 
 use crate::{
     error::SmartWalletError,
+    events,
     storage,
     types::Credential,
 };
@@ -51,6 +52,8 @@ pub fn register_credential(
     list.ids.push_back(credential_id.clone());
     storage::save_credential_ids(env, &list);
 
+    events::credential_registered(env, credential_id, label);
+
     Ok(())
 }
 
@@ -82,6 +85,8 @@ pub fn deregister_credential(
     }
     list.ids = new_ids;
     storage::save_credential_ids(env, &list);
+
+    events::credential_removed(env, credential_id);
 
     Ok(())
 }

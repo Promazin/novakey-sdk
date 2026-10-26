@@ -21,6 +21,7 @@
 
 mod contract;
 mod error;
+mod events;
 mod storage;
 
 pub use contract::{FactoryContract, FactoryContractClient};

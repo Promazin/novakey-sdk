@@ -15,6 +15,7 @@ mod auth;
 mod contract;
 mod crypto;
 mod error;
+mod events;
 mod nonce;
 mod registration;
 mod storage;

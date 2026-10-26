@@ -8,7 +8,7 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::Address as _,
+    testutils::{Address as _, Events as _},
     Address, Bytes, BytesN, Env,
 };
 
@@ -253,4 +253,43 @@ fn test_get_nonce_on_uninitialised_wallet_returns_error() {
 
     let result = client.try_get_nonce();
     assert_eq!(result, Err(Ok(SmartWalletError::NotInitialized)));
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_registration_publishes_event() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SmartWalletContract);
+    let client = SmartWalletContractClient::new(&env, &contract_id);
+    let owner = Address::generate(&env);
+
+    client.initialize(
+        &owner,
+        &fake_cred_id(&env, 1),
+        &fake_pubkey(&env, 1),
+        &Bytes::from_slice(&env, b"Phone"),
+    );
+
+    let events = env.events().all();
+    assert!(!events.is_empty());
+}
+
+#[test]
+fn test_deregistration_publishes_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup(&env);
+
+    client.add_credential(
+        &fake_cred_id(&env, 2),
+        &fake_pubkey(&env, 2),
+        &Bytes::from_slice(&env, b"second"),
+    );
+
+    let count_before = env.events().all().len();
+    client.remove_credential(&fake_cred_id(&env, 2));
+    let count_after = env.events().all().len();
+
+    assert_eq!(count_after, count_before + 1);
 }

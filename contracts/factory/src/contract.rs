@@ -1,6 +1,6 @@
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, Symbol, Val, Vec};
 
-use crate::{error::FactoryError, storage};
+use crate::{error::FactoryError, events, storage};
 
 #[contract]
 pub struct FactoryContract;
@@ -98,6 +98,8 @@ impl FactoryContract {
         storage::bump_wallet_ttl(&env, &credential_id);
         storage::bump_instance_ttl(&env);
 
+        events::wallet_deployed(&env, &owner, &wallet_address, &credential_id);
+
         Ok(wallet_address)
     }
 
@@ -118,6 +120,8 @@ impl FactoryContract {
 
         storage::set_wasm_hash(&env, &new_wasm_hash);
         storage::bump_instance_ttl(&env);
+
+        events::wasm_hash_updated(&env, &admin, &new_wasm_hash);
 
         Ok(())
     }
