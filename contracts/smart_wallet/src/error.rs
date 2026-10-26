@@ -29,4 +29,6 @@ pub enum SmartWalletError {
     MaxCredentialsReached = 9,
     /// Cannot remove the last registered credential to prevent self-lockout.
     CannotRemoveLastCredential = 10,
+    /// Recovery attempted but no guardian address is registered.
+    GuardianNotSet = 11,
 }

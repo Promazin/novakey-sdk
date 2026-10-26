@@ -17,6 +17,7 @@ mod crypto;
 mod error;
 mod events;
 mod nonce;
+mod recovery;
 mod registration;
 mod storage;
 mod types;

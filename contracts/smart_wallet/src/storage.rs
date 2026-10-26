@@ -15,6 +15,8 @@ pub enum DataKey {
     CredentialIds,
     /// Monotonic nonce to prevent transaction replay.
     Nonce,
+    /// Recovery guardian address allowed to reset credentials.
+    Guardian,
 }
 
 /// Persistent owner record stored at initialisation.
@@ -119,6 +121,23 @@ pub fn get_nonce(env: &Env) -> u64 {
 /// Persist the nonce.
 pub fn set_nonce(env: &Env, nonce: u64) {
     env.storage().instance().set(&DataKey::Nonce, &nonce);
+}
+
+// ── Guardian ──────────────────────────────────────────────────────────────────
+
+/// Set the recovery guardian address.
+pub fn set_guardian(env: &Env, guardian: &Address) {
+    env.storage().instance().set(&DataKey::Guardian, guardian);
+}
+
+/// Retrieve the recovery guardian address.
+pub fn get_guardian(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::Guardian)
+}
+
+/// Remove the recovery guardian.
+pub fn remove_guardian(env: &Env) {
+    env.storage().instance().remove(&DataKey::Guardian);
 }
 
 // ── Ledger TTL management ─────────────────────────────────────────────────────

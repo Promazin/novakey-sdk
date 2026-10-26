@@ -3,6 +3,8 @@ use soroban_sdk::{auth::Context, contract, contractimpl, Address, Bytes, BytesN,
 use crate::{
     auth::{check_auth, AuthPayload},
     error::SmartWalletError,
+    events,
+    recovery,
     registration,
     storage,
     types::{Credential, SignaturePayload},
@@ -80,6 +82,50 @@ impl SmartWalletContract {
         registration::deregister_credential(&env, &credential_id)?;
         storage::bump_instance_ttl(&env);
         Ok(())
+    }
+
+    // ── Recovery management ───────────────────────────────────────────────────
+
+    /// Configure a recovery guardian address. Requires owner authorization.
+    pub fn set_guardian(env: Env, guardian: Address) -> Result<(), SmartWalletError> {
+        Self::require_initialized(&env)?;
+        let owner = storage::get_owner(&env).ok_or(SmartWalletError::NotInitialized)?;
+        owner.require_auth();
+
+        storage::set_guardian(&env, &guardian);
+        events::guardian_set(&env, &guardian);
+        storage::bump_instance_ttl(&env);
+        Ok(())
+    }
+
+    /// Retrieve the recovery guardian address if configured.
+    pub fn get_guardian(env: Env) -> Result<Option<Address>, SmartWalletError> {
+        Self::require_initialized(&env)?;
+        Ok(storage::get_guardian(&env))
+    }
+
+    /// Remove the recovery guardian. Requires owner authorization.
+    pub fn remove_guardian(env: Env) -> Result<(), SmartWalletError> {
+        Self::require_initialized(&env)?;
+        let owner = storage::get_owner(&env).ok_or(SmartWalletError::NotInitialized)?;
+        owner.require_auth();
+
+        storage::remove_guardian(&env);
+        events::guardian_removed(&env);
+        storage::bump_instance_ttl(&env);
+        Ok(())
+    }
+
+    /// Recover account by replacing all credentials with a new passkey.
+    /// Requires guardian authorization.
+    pub fn recover_wallet(
+        env: Env,
+        new_credential_id: BytesN<16>,
+        new_public_key: BytesN<65>,
+        new_label: Bytes,
+    ) -> Result<(), SmartWalletError> {
+        Self::require_initialized(&env)?;
+        recovery::recover_wallet(&env, &new_credential_id, &new_public_key, &new_label)
     }
 
     // ── Read helpers ──────────────────────────────────────────────────────────

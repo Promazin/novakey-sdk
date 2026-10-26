@@ -26,3 +26,30 @@ pub fn auth_success(env: &Env, credential_id: &BytesN<16>, nonce: u64, op_hash: 
     let topics = (Symbol::new(env, "auth_success"), credential_id.clone());
     env.events().publish(topics, (nonce, op_hash.clone()));
 }
+
+/// Emitted when a guardian is configured.
+///
+/// Topics: `("guardian_set", guardian)`
+/// Data: `()`
+pub fn guardian_set(env: &Env, guardian: &soroban_sdk::Address) {
+    let topics = (Symbol::new(env, "guardian_set"), guardian.clone());
+    env.events().publish(topics, ());
+}
+
+/// Emitted when a guardian is removed.
+///
+/// Topics: `("guardian_removed", ())`
+/// Data: `()`
+pub fn guardian_removed(env: &Env) {
+    let topics = (Symbol::new(env, "guardian_removed"), ());
+    env.events().publish(topics, ());
+}
+
+/// Emitted when wallet recovery is executed by guardian.
+///
+/// Topics: `("wallet_recovered", guardian)`
+/// Data: `new_credential_id`
+pub fn wallet_recovered(env: &Env, guardian: &soroban_sdk::Address, new_credential_id: &BytesN<16>) {
+    let topics = (Symbol::new(env, "wallet_recovered"), guardian.clone());
+    env.events().publish(topics, new_credential_id.clone());
+}
