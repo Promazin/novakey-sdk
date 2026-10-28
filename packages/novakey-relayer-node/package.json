@@ -1,0 +1,30 @@
+{
+  "name": "@novakey/relayer-node",
+  "version": "0.1.0",
+  "description": "Self-hosted gas-sponsoring relayer engine and HTTP server for NovaKey smart wallets on Stellar",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@novakey/core": "workspace:*"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "relayer",
+    "fee-bump",
+    "gasless",
+    "smart-wallet"
+  ],
+  "author": "NovaKey Team",
+  "license": "MIT"
+}
