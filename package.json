@@ -10,7 +10,8 @@
   "scripts": {
     "test": "node --test packages/*/tests/*.test.ts",
     "test:contracts": "cd contracts && cargo test",
-    "build:contracts": "cd contracts && cargo build --target wasm32-unknown-unknown --release"
+    "build:contracts": "cd contracts && cargo build --target wasm32-unknown-unknown --release",
+    "example": "node examples/basic-wallet-flow.ts"
   },
   "keywords": [
     "stellar",

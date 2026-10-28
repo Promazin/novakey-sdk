@@ -237,9 +237,9 @@ To develop and test across the repository:
 
 ## 🗺️ Roadmap 
 
-- **Phase 1 (Completed):** Core Rust Smart Contract architecture, native `secp256r1` verification, deterministic factory deployment, guardian recovery, contract event system, and integration test suites.
-- **Phase 2 (Completed):** TypeScript core SDK (`@novakey/core`) bridging WebAuthn assertions to Soroban authorization payloads, low-s signature normalization, deterministic address derivation, and unit tests.
-- **Phase 3 (Current):** `@novakey/react` wrapper, complete open-source relayer node server, and Testnet beta launch.
+- **Phase 1 (Completed):** Core Rust Smart Contract architecture, native `secp256r1` verification, deterministic factory deployment, guardian recovery, ownership & credential lifecycle management, contract event system, and integration test suites.
+- **Phase 2 (Completed):** TypeScript core SDK (`@novakey/core`) bridging WebAuthn assertions (SPKI/COSE public keys, authenticator data, DER low-s normalization) to Soroban authorization payloads, deterministic address derivation, and unit tests.
+- **Phase 3 (Completed):** `@novakey/react` hooks & reactive store wrapper, self-hosted gas-sponsoring relayer engine & HTTP server (`@novakey/relayer-node`), and Testnet beta tooling.
 - **Phase 4 (Target: Q2):** React Native (iOS/Android) native biometrics bridge, third-party security audits, and Stellar Mainnet deployment.
 
 ---

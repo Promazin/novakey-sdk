@@ -55,3 +55,6 @@ jobs:
 
       - name: Run SDK tests
         run: npm test
+
+      - name: Run end-to-end flow example
+        run: npm run example

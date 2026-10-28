@@ -29,11 +29,11 @@ The system architecture consists of three interconnected layers:
 
 ## 🔑 Cryptographic Pipeline
 
-### 1. Key Generation
+### 1. Key Generation & Extraction
 The user's device enclave generates an ECDSA keypair on the NIST P-256 (`secp256r1`) curve:
 - Private key: Never leaves the device hardware (FaceID / TouchID / TPM).
-- Public key: 65-byte uncompressed point (`0x04 || X(32) || Y(32)`).
-- Credential ID: 16-byte identifier exported during WebAuthn registration.
+- Public key: Exported via WebAuthn as either a 91-byte ASN.1 DER `SubjectPublicKeyInfo` (`SPKI`), a CBOR-encoded `COSE_Key` EC2 map, or a 65-byte uncompressed SEC1 point (`0x04 || X(32) || Y(32)`). `@novakey/core` normalizes all formats into the canonical 65-byte uncompressed representation and validates non-zero coordinates on both client and contract.
+- Credential ID: 16-byte identifier exported during WebAuthn registration (or SHA-256 truncated to 16 bytes for longer authenticator IDs).
 
 ### 2. Transaction Signing & Normalization
 When authorizing a transaction:
@@ -100,9 +100,13 @@ Both `SmartWalletContract` and `FactoryContract` emit structured contract events
 | :--- | :--- | :--- | :--- |
 | `SmartWallet` | `("credential_registered", credential_id)` | `label` | Passkey added |
 | `SmartWallet` | `("credential_removed", credential_id)` | `()` | Passkey removed |
+| `SmartWallet` | `("credential_label_updated", credential_id)` | `new_label` | Passkey device label updated |
 | `SmartWallet` | `("auth_success", credential_id)` | `(nonce, operation_hash)` | Transaction authorized |
 | `SmartWallet` | `("guardian_set", guardian)` | `()` | Recovery guardian set |
 | `SmartWallet` | `("guardian_removed", ())` | `()` | Recovery guardian removed |
 | `SmartWallet` | `("wallet_recovered", guardian)` | `new_credential_id` | Wallet recovered |
+| `SmartWallet` | `("ownership_transferred", old_owner)` | `new_owner` | Wallet owner rotated |
+| `SmartWallet` | `("wallet_upgraded", owner)` | `new_wasm_hash` | Wallet WASM upgraded |
 | `Factory` | `("wallet_deployed", owner)` | `(wallet_address, credential_id)` | Wallet deployed |
 | `Factory` | `("wasm_updated", admin)` | `new_wasm_hash` | Smart wallet WASM upgraded |
+| `Factory` | `("admin_transferred", old_admin)` | `new_admin` | Factory admin rotated |
