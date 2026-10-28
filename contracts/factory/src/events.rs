@@ -22,3 +22,12 @@ pub fn wasm_hash_updated(env: &Env, admin: &Address, new_wasm_hash: &BytesN<32>)
     let topics = (Symbol::new(env, "wasm_updated"), admin.clone());
     env.events().publish(topics, new_wasm_hash.clone());
 }
+
+/// Emitted when factory administration is transferred to a new address.
+///
+/// Topics: `("admin_transferred", old_admin)`
+/// Data: `new_admin`
+pub fn admin_transferred(env: &Env, old_admin: &Address, new_admin: &Address) {
+    let topics = (Symbol::new(env, "admin_transferred"), old_admin.clone());
+    env.events().publish(topics, new_admin.clone());
+}

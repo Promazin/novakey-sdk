@@ -118,3 +118,25 @@ pub fn deregister_credential(
 
     Ok(())
 }
+
+/// Update the human-readable device label for an existing credential.
+pub fn update_credential_label(
+    env: &Env,
+    credential_id: &BytesN<16>,
+    new_label: &Bytes,
+) -> Result<(), SmartWalletError> {
+    if new_label.len() as usize > MAX_LABEL_BYTES {
+        return Err(SmartWalletError::LabelTooLong);
+    }
+
+    let mut credential = storage::load_credential(env, credential_id)
+        .ok_or(SmartWalletError::CredentialNotFound)?;
+
+    credential.label = new_label.clone();
+    storage::save_credential(env, credential_id, &credential);
+    storage::bump_credential_ttl(env, credential_id);
+
+    events::credential_label_updated(env, credential_id, new_label);
+
+    Ok(())
+}

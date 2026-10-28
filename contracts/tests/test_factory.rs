@@ -161,3 +161,16 @@ fn test_factory_rejects_zero_wasm_hash() {
     let update_res = client.try_set_wasm_hash(&zero_hash);
     assert_eq!(update_res, Err(Ok(FactoryError::InvalidWasmHash)));
 }
+
+#[test]
+fn test_factory_transfer_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, old_admin, _) = setup_factory(&env);
+
+    let new_admin = Address::generate(&env);
+    assert_ne!(old_admin, new_admin);
+
+    client.transfer_admin(&new_admin);
+    assert_eq!(client.get_admin(), new_admin);
+}

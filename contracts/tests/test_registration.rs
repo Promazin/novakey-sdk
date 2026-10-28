@@ -334,3 +334,33 @@ fn test_deregistration_publishes_event() {
 
     assert_eq!(count_after, count_before + 1);
 }
+
+#[test]
+fn test_update_credential_label_and_transfer_ownership() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, old_owner) = setup(&env);
+
+    // Update credential label
+    let cred_id = fake_cred_id(&env, 1);
+    let new_label = Bytes::from_slice(&env, b"iPhone 16 Pro FaceID");
+    client.update_credential_label(&cred_id, &new_label);
+
+    let updated = client.get_credential(&cred_id);
+    assert_eq!(updated.label, new_label);
+
+    // Rejects unknown credential ID
+    let unknown_res = client.try_update_credential_label(&fake_cred_id(&env, 99), &new_label);
+    assert_eq!(unknown_res, Err(Ok(SmartWalletError::CredentialNotFound)));
+
+    // Rejects overly long label
+    let long_label = Bytes::from_slice(&env, &[b'z'; 65]);
+    let long_res = client.try_update_credential_label(&cred_id, &long_label);
+    assert_eq!(long_res, Err(Ok(SmartWalletError::LabelTooLong)));
+
+    // Transfer ownership
+    let new_owner = Address::generate(&env);
+    assert_ne!(old_owner, new_owner);
+    client.transfer_ownership(&new_owner);
+    assert_eq!(client.owner(), new_owner);
+}

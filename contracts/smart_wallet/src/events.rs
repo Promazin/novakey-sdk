@@ -53,3 +53,41 @@ pub fn wallet_recovered(env: &Env, guardian: &soroban_sdk::Address, new_credenti
     let topics = (Symbol::new(env, "wallet_recovered"), guardian.clone());
     env.events().publish(topics, new_credential_id.clone());
 }
+
+/// Emitted when a passkey credential's human-readable label is updated.
+///
+/// Topics: `("credential_label_updated", credential_id)`
+/// Data: `new_label`
+pub fn credential_label_updated(env: &Env, credential_id: &BytesN<16>, new_label: &Bytes) {
+    let topics = (
+        Symbol::new(env, "credential_label_updated"),
+        credential_id.clone(),
+    );
+    env.events().publish(topics, new_label.clone());
+}
+
+/// Emitted when wallet ownership is transferred to a new address.
+///
+/// Topics: `("ownership_transferred", old_owner)`
+/// Data: `new_owner`
+pub fn ownership_transferred(
+    env: &Env,
+    old_owner: &soroban_sdk::Address,
+    new_owner: &soroban_sdk::Address,
+) {
+    let topics = (Symbol::new(env, "ownership_transferred"), old_owner.clone());
+    env.events().publish(topics, new_owner.clone());
+}
+
+/// Emitted when the wallet contract WASM binary is upgraded by the owner.
+///
+/// Topics: `("wallet_upgraded", owner)`
+/// Data: `new_wasm_hash`
+pub fn wallet_upgraded(
+    env: &Env,
+    owner: &soroban_sdk::Address,
+    new_wasm_hash: &BytesN<32>,
+) {
+    let topics = (Symbol::new(env, "wallet_upgraded"), owner.clone());
+    env.events().publish(topics, new_wasm_hash.clone());
+}

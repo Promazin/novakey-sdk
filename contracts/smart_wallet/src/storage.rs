@@ -19,13 +19,6 @@ pub enum DataKey {
     Guardian,
 }
 
-/// Persistent owner record stored at initialisation.
-#[contracttype]
-#[derive(Clone)]
-pub struct OwnerRecord {
-    pub owner: Address,
-}
-
 /// Thin wrapper around a list of credential IDs so it can be stored as one
 /// ledger entry and iterated cheaply.
 #[contracttype]

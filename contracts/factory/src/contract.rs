@@ -129,6 +129,23 @@ impl FactoryContract {
         Ok(())
     }
 
+    /// Transfer factory administration to a new address.
+    ///
+    /// Requires current admin authorization.
+    pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), FactoryError> {
+        Self::require_initialized(&env)?;
+
+        let old_admin = storage::get_admin(&env).ok_or(FactoryError::NotInitialized)?;
+        old_admin.require_auth();
+
+        storage::set_admin(&env, &new_admin);
+        storage::bump_instance_ttl(&env);
+
+        events::admin_transferred(&env, &old_admin, &new_admin);
+
+        Ok(())
+    }
+
     // ── Read helpers ──────────────────────────────────────────────────────────
 
     /// Return the current factory administrator address.

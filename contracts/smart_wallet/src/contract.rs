@@ -84,6 +84,59 @@ impl SmartWalletContract {
         Ok(())
     }
 
+    /// Update the human-readable label of an existing passkey credential.
+    ///
+    /// Requires the owner to authorise.
+    pub fn update_credential_label(
+        env: Env,
+        credential_id: BytesN<16>,
+        new_label: Bytes,
+    ) -> Result<(), SmartWalletError> {
+        Self::require_initialized(&env)?;
+        let owner = storage::get_owner(&env).ok_or(SmartWalletError::NotInitialized)?;
+        owner.require_auth();
+
+        registration::update_credential_label(&env, &credential_id, &new_label)?;
+        storage::bump_instance_ttl(&env);
+        Ok(())
+    }
+
+    // ── Ownership & lifecycle management ──────────────────────────────────────
+
+    /// Transfer ownership of this smart wallet to a new Stellar address.
+    ///
+    /// Requires the current owner to authorise.
+    pub fn transfer_ownership(
+        env: Env,
+        new_owner: Address,
+    ) -> Result<(), SmartWalletError> {
+        Self::require_initialized(&env)?;
+        let old_owner = storage::get_owner(&env).ok_or(SmartWalletError::NotInitialized)?;
+        old_owner.require_auth();
+
+        storage::set_owner(&env, &new_owner);
+        storage::bump_instance_ttl(&env);
+        events::ownership_transferred(&env, &old_owner, &new_owner);
+        Ok(())
+    }
+
+    /// Upgrade the smart wallet contract executable to a new WASM hash.
+    ///
+    /// Requires the owner to authorise.
+    pub fn upgrade(
+        env: Env,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<(), SmartWalletError> {
+        Self::require_initialized(&env)?;
+        let owner = storage::get_owner(&env).ok_or(SmartWalletError::NotInitialized)?;
+        owner.require_auth();
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+        storage::bump_instance_ttl(&env);
+        events::wallet_upgraded(&env, &owner, &new_wasm_hash);
+        Ok(())
+    }
+
     // ── Recovery management ───────────────────────────────────────────────────
 
     /// Configure a recovery guardian address. Requires owner authorization.
