@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import {
+  base64UrlToBytes,
+  bytesToBase64Url,
   bytesToHex,
   derToRawSignature,
   deriveCredentialSalt,
   hashPayload,
   hexToBytes,
+  isLowSSignature,
   rawToDerSignature,
   SECP256R1_HALF_N,
   SECP256R1_N,
@@ -98,4 +101,54 @@ test('hexToBytes and bytesToHex roundtrip', () => {
   const hex = '0123456789abcdef';
   const bytes = hexToBytes(hex);
   assert.strictEqual(bytesToHex(bytes), hex);
+});
+
+test('derToRawSignature rejects malformed DER and zero scalars', () => {
+  // Too short
+  assert.throws(() => derToRawSignature(new Uint8Array([0x30, 0x02])), /buffer too short/);
+
+  // Zero r scalar
+  const zeroR = new Uint8Array(32);
+  const validS = new Uint8Array(32).fill(0x01);
+  const derZeroR = new Uint8Array([
+    0x30, 0x44,
+    0x02, 0x20, ...zeroR,
+    0x02, 0x20, ...validS,
+  ]);
+  assert.throws(() => derToRawSignature(derZeroR), /r out of curve order bounds/);
+
+  // Trailing bytes after sequence
+  const derTrailing = new Uint8Array([
+    0x30, 0x44,
+    0x02, 0x20, ...validS,
+    0x02, 0x20, ...validS,
+    0xff,
+  ]);
+  assert.throws(() => derToRawSignature(derTrailing), /sequence length mismatch/);
+});
+
+test('isLowSSignature validates canonical low-s compact signatures', () => {
+  const validLowS = new Uint8Array(64).fill(0x01);
+  assert.strictEqual(isLowSSignature(validLowS), true);
+
+  // Zero signature is invalid
+  assert.strictEqual(isLowSSignature(new Uint8Array(64)), false);
+
+  // High-s signature is non-canonical
+  const highS = SECP256R1_HALF_N + 1n;
+  const highSSig = new Uint8Array(64);
+  highSSig.fill(0x01, 0, 32);
+  highSSig.set(hexToBytes(highS.toString(16).padStart(64, '0')), 32);
+  assert.strictEqual(isLowSSignature(highSSig), false);
+});
+
+test('bytesToBase64Url and base64UrlToBytes roundtrip', () => {
+  const input = new Uint8Array([0xfb, 0xff, 0xfe, 0x00, 0x10, 0x20, 0x30]);
+  const encoded = bytesToBase64Url(input);
+  assert.ok(!encoded.includes('+'));
+  assert.ok(!encoded.includes('/'));
+  assert.ok(!encoded.includes('='));
+
+  const decoded = base64UrlToBytes(encoded);
+  assert.deepStrictEqual(decoded, input);
 });

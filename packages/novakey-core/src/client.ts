@@ -2,11 +2,13 @@ import {
   bytesToHex,
   deriveCredentialSalt,
   hashPayload,
+  hexToBytes,
 } from './crypto.ts';
 import type {
   AuthPayload,
   NovaKeyConfig,
   PasskeyCredential,
+  SerializedAuthPayload,
   SignaturePayload,
 } from './types.ts';
 
@@ -80,5 +82,29 @@ export class NovaKeyWalletClient {
       publicKeyHex: bytesToHex(credential.publicKey),
       label: credential.label,
     };
+  }
+
+  /**
+   * Serialize an `AuthPayload` into a JSON-safe transport object for relayer submission.
+   */
+  public serializeAuthPayload(payload: AuthPayload): SerializedAuthPayload {
+    return {
+      credentialIdHex: bytesToHex(payload.credentialId),
+      nonce: payload.signed.nonce.toString(10),
+      operationHashHex: bytesToHex(payload.signed.operationHash),
+      signatureHex: bytesToHex(payload.signature),
+    };
+  }
+
+  /**
+   * Deserialize a JSON transport object back into a typed `AuthPayload`.
+   */
+  public deserializeAuthPayload(serialized: SerializedAuthPayload): AuthPayload {
+    return this.buildAuthPayload({
+      credentialId: hexToBytes(serialized.credentialIdHex),
+      nonce: BigInt(serialized.nonce),
+      operationHash: hexToBytes(serialized.operationHashHex),
+      signature: hexToBytes(serialized.signatureHex),
+    });
   }
 }

@@ -39,6 +39,20 @@ export interface AuthPayload {
 }
 
 /**
+ * JSON-serializable representation of `AuthPayload` for HTTP transport to a Relayer.
+ */
+export interface SerializedAuthPayload {
+  /** 32-character hex-encoded credential ID (16 bytes) */
+  credentialIdHex: string;
+  /** Nonce serialized as decimal string */
+  nonce: string;
+  /** 64-character hex-encoded operation hash (32 bytes) */
+  operationHashHex: string;
+  /** 128-character hex-encoded compact signature (64 bytes) */
+  signatureHex: string;
+}
+
+/**
  * Configuration for wallet creation and deployment.
  */
 export interface WalletDeploymentConfig {
@@ -65,4 +79,36 @@ export interface NovaKeyConfig {
   rpcUrl: string;
   factoryContractId?: string;
   relayerUrl?: string;
+}
+
+/**
+ * Flags decoded from the 33rd byte of WebAuthn `authenticatorData`.
+ */
+export interface AuthenticatorFlags {
+  /** Bit 0 (UP): User Presence result */
+  userPresent: boolean;
+  /** Bit 2 (UV): User Verification result */
+  userVerified: boolean;
+  /** Bit 3 (BE): Backup Eligibility */
+  backupEligible: boolean;
+  /** Bit 4 (BS): Backup State */
+  backupState: boolean;
+  /** Bit 6 (AT): Attested credential data included */
+  attestedCredentialData: boolean;
+  /** Bit 7 (ED): Extension data included */
+  extensionDataIncluded: boolean;
+  /** Raw flag byte */
+  raw: number;
+}
+
+/**
+ * Parsed WebAuthn `authenticatorData` structure (minimum 37 bytes).
+ */
+export interface ParsedAuthenticatorData {
+  /** 32-byte SHA-256 hash of the Relying Party ID */
+  rpIdHash: Uint8Array;
+  /** Decoded authenticator flags */
+  flags: AuthenticatorFlags;
+  /** 32-bit big-endian signature counter */
+  signCount: number;
 }
