@@ -23,6 +23,8 @@ impl FactoryContract {
             return Err(FactoryError::AlreadyInitialized);
         }
 
+        Self::validate_wasm_hash(&env, &wasm_hash)?;
+
         storage::set_initialized(&env);
         storage::set_admin(&env, &admin);
         storage::set_wasm_hash(&env, &wasm_hash);
@@ -114,6 +116,7 @@ impl FactoryContract {
         new_wasm_hash: BytesN<32>,
     ) -> Result<(), FactoryError> {
         Self::require_initialized(&env)?;
+        Self::validate_wasm_hash(&env, &new_wasm_hash)?;
 
         let admin = storage::get_admin(&env).ok_or(FactoryError::NotInitialized)?;
         admin.require_auth();
@@ -127,6 +130,18 @@ impl FactoryContract {
     }
 
     // ── Read helpers ──────────────────────────────────────────────────────────
+
+    /// Return the current factory administrator address.
+    pub fn get_admin(env: Env) -> Result<Address, FactoryError> {
+        Self::require_initialized(&env)?;
+        storage::get_admin(&env).ok_or(FactoryError::NotInitialized)
+    }
+
+    /// Return the currently configured SmartWallet WASM hash.
+    pub fn get_wasm_hash(env: Env) -> Result<BytesN<32>, FactoryError> {
+        Self::require_initialized(&env)?;
+        storage::get_wasm_hash(&env).ok_or(FactoryError::NotInitialized)
+    }
 
     /// Look up the wallet address for a given credential ID.
     ///
@@ -155,6 +170,15 @@ impl FactoryContract {
     fn require_initialized(env: &Env) -> Result<(), FactoryError> {
         if !storage::is_initialized(env) {
             return Err(FactoryError::NotInitialized);
+        }
+        Ok(())
+    }
+
+    /// Ensure the WASM hash is not all zeros.
+    fn validate_wasm_hash(env: &Env, hash: &BytesN<32>) -> Result<(), FactoryError> {
+        let zero = BytesN::from_array(env, &[0u8; 32]);
+        if *hash == zero {
+            return Err(FactoryError::InvalidWasmHash);
         }
         Ok(())
     }

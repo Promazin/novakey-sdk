@@ -140,3 +140,24 @@ fn test_deploy_wallet_uninitialized_returns_error() {
     let res = client.try_deploy_wallet(&owner, &cred_id, &public_key, &label);
     assert_eq!(res, Err(Ok(FactoryError::NotInitialized)));
 }
+
+#[test]
+fn test_factory_rejects_zero_wasm_hash() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, FactoryContract);
+    let client = FactoryContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+
+    let init_res = client.try_initialize(&admin, &zero_hash);
+    assert_eq!(init_res, Err(Ok(FactoryError::InvalidWasmHash)));
+
+    let valid_hash = fake_wasm_hash(&env, 1);
+    client.initialize(&admin, &valid_hash);
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_wasm_hash(), valid_hash);
+
+    let update_res = client.try_set_wasm_hash(&zero_hash);
+    assert_eq!(update_res, Err(Ok(FactoryError::InvalidWasmHash)));
+}

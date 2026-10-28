@@ -31,4 +31,6 @@ pub enum SmartWalletError {
     CannotRemoveLastCredential = 10,
     /// Recovery attempted but no guardian address is registered.
     GuardianNotSet = 11,
+    /// The secp256r1 public key is malformed (must be uncompressed 0x04 prefix with non-zero coordinates).
+    InvalidPublicKey = 12,
 }

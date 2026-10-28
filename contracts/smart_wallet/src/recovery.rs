@@ -27,6 +27,8 @@ pub fn recover_wallet(
     let guardian = storage::get_guardian(env).ok_or(SmartWalletError::GuardianNotSet)?;
     guardian.require_auth();
 
+    registration::validate_public_key(new_public_key)?;
+
     if new_label.len() as usize > registration::MAX_LABEL_BYTES {
         return Err(SmartWalletError::LabelTooLong);
     }

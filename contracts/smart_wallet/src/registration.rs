@@ -13,10 +13,36 @@ pub const MAX_CREDENTIALS: u32 = 10;
 /// Maximum byte length of a credential label.
 pub const MAX_LABEL_BYTES: usize = 64;
 
+/// Uncompressed SEC1 point prefix byte.
+pub const UNCOMPRESSED_POINT_PREFIX: u8 = 0x04;
+
+/// Validate that a 65-byte secp256r1 public key uses the uncompressed `0x04` prefix
+/// and contains non-zero coordinate material.
+pub fn validate_public_key(public_key: &BytesN<65>) -> Result<(), SmartWalletError> {
+    if public_key.get(0) != Some(UNCOMPRESSED_POINT_PREFIX) {
+        return Err(SmartWalletError::InvalidPublicKey);
+    }
+
+    let mut has_nonzero_coord = false;
+    for i in 1..65 {
+        if public_key.get(i).unwrap_or(0) != 0 {
+            has_nonzero_coord = true;
+            break;
+        }
+    }
+
+    if !has_nonzero_coord {
+        return Err(SmartWalletError::InvalidPublicKey);
+    }
+
+    Ok(())
+}
+
 /// Register a new passkey credential, persisting it to storage.
 ///
 /// Validates that:
 /// - The wallet is initialised.
+/// - The public key is a valid uncompressed point (`0x04` prefix, non-zero coordinates).
 /// - The label fits within `MAX_LABEL_BYTES`.
 /// - No credential with this ID already exists.
 /// - The total credential count stays ≤ `MAX_CREDENTIALS`.
@@ -28,6 +54,8 @@ pub fn register_credential(
     public_key: &BytesN<65>,
     label: &Bytes,
 ) -> Result<(), SmartWalletError> {
+    validate_public_key(public_key)?;
+
     if label.len() as usize > MAX_LABEL_BYTES {
         return Err(SmartWalletError::LabelTooLong);
     }

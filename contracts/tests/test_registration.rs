@@ -108,6 +108,47 @@ fn test_initialize_rejects_label_too_long() {
     assert_eq!(result, Err(Ok(SmartWalletError::LabelTooLong)));
 }
 
+#[test]
+fn test_initialize_rejects_invalid_public_key_prefix() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SmartWalletContract);
+    let client = SmartWalletContractClient::new(&env, &contract_id);
+    let owner = Address::generate(&env);
+
+    // 0x02 is compressed prefix; contract requires 0x04 uncompressed
+    let mut bad_pk = [0u8; 65];
+    bad_pk[0] = 0x02;
+    bad_pk[1] = 0x01;
+
+    let result = client.try_initialize(
+        &owner,
+        &fake_cred_id(&env, 1),
+        &BytesN::from_array(&env, &bad_pk),
+        &Bytes::from_slice(&env, b"Bad Key Device"),
+    );
+
+    assert_eq!(result, Err(Ok(SmartWalletError::InvalidPublicKey)));
+}
+
+#[test]
+fn test_add_credential_rejects_zero_coordinates_public_key() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup(&env);
+
+    // 0x04 prefix but all-zero X and Y coordinates
+    let mut zero_coord_pk = [0u8; 65];
+    zero_coord_pk[0] = 0x04;
+
+    let result = client.try_add_credential(
+        &fake_cred_id(&env, 2),
+        &BytesN::from_array(&env, &zero_coord_pk),
+        &Bytes::from_slice(&env, b"Zero Coord Key"),
+    );
+
+    assert_eq!(result, Err(Ok(SmartWalletError::InvalidPublicKey)));
+}
+
 // ── add_credential ────────────────────────────────────────────────────────────
 
 #[test]

@@ -144,6 +144,29 @@ fn test_recover_wallet_rejects_long_label() {
 }
 
 #[test]
+fn test_recover_wallet_rejects_invalid_public_key() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup(&env);
+
+    let guardian = Address::generate(&env);
+    client.set_guardian(&guardian);
+
+    let new_cred = fake_cred_id(&env, 2);
+    let mut bad_pk = [0u8; 65];
+    bad_pk[0] = 0x03; // compressed prefix, invalid for uncompressed 65-byte SEC1
+    bad_pk[1] = 0x42;
+    let label = Bytes::from_slice(&env, b"Recovered Phone");
+
+    let res = client.try_recover_wallet(
+        &new_cred,
+        &BytesN::from_array(&env, &bad_pk),
+        &label,
+    );
+    assert_eq!(res, Err(Ok(SmartWalletError::InvalidPublicKey)));
+}
+
+#[test]
 fn test_recovery_uninitialized_returns_error() {
     let env = Env::default();
     let contract_id = env.register_contract(None, SmartWalletContract);
