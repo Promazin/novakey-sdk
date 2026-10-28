@@ -1,0 +1,39 @@
+{
+  "name": "@novakey/react",
+  "version": "0.1.0",
+  "description": "React state store, provider, and hooks for NovaKey passkey-native smart wallets on Stellar",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@novakey/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "react",
+    "hooks",
+    "passkeys",
+    "webauthn",
+    "smart-wallet"
+  ],
+  "author": "NovaKey Team",
+  "license": "MIT"
+}
