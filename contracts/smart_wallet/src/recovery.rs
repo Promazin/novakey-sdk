@@ -57,6 +57,9 @@ pub fn recover_wallet(
     let current_nonce = storage::get_nonce(env);
     storage::set_nonce(env, current_nonce.saturating_add(1));
 
+    // Release emergency lock if it was active
+    storage::set_locked(env, false);
+
     storage::bump_instance_ttl(env);
     events::wallet_recovered(env, &guardian, new_credential_id);
 

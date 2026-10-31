@@ -91,3 +91,21 @@ pub fn wallet_upgraded(
     let topics = (Symbol::new(env, "wallet_upgraded"), owner.clone());
     env.events().publish(topics, new_wasm_hash.clone());
 }
+
+/// Emitted when the wallet is placed under emergency lock.
+///
+/// Topics: `("wallet_locked", caller)`
+/// Data: `()`
+pub fn wallet_locked(env: &Env, caller: &soroban_sdk::Address) {
+    let topics = (Symbol::new(env, "wallet_locked"), caller.clone());
+    env.events().publish(topics, ());
+}
+
+/// Emitted when the emergency lock is released.
+///
+/// Topics: `("wallet_unlocked", caller)`
+/// Data: `()`
+pub fn wallet_unlocked(env: &Env, caller: &soroban_sdk::Address) {
+    let topics = (Symbol::new(env, "wallet_unlocked"), caller.clone());
+    env.events().publish(topics, ());
+}

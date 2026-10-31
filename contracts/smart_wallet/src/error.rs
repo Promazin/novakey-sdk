@@ -33,4 +33,8 @@ pub enum SmartWalletError {
     GuardianNotSet = 11,
     /// The secp256r1 public key is malformed (must be uncompressed 0x04 prefix with non-zero coordinates).
     InvalidPublicKey = 12,
+    /// The wallet is currently in emergency freeze / locked state.
+    WalletLocked = 13,
+    /// Caller is not authorized to execute this emergency action.
+    Unauthorized = 14,
 }

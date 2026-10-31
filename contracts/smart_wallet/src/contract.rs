@@ -151,6 +151,43 @@ impl SmartWalletContract {
         Ok(())
     }
 
+    // ── Emergency freeze & security controls ──────────────────────────────────
+
+    /// Place the smart wallet under emergency freeze.
+    ///
+    /// Callable by either the wallet owner or the recovery guardian.
+    /// While locked, all transactions attempting `__check_auth` fail immediately.
+    pub fn lock_wallet(env: Env, caller: Address) -> Result<(), SmartWalletError> {
+        Self::require_initialized(&env)?;
+        Self::require_owner_or_guardian(&env, &caller)?;
+        caller.require_auth();
+
+        storage::set_locked(&env, true);
+        storage::bump_instance_ttl(&env);
+        events::wallet_locked(&env, &caller);
+        Ok(())
+    }
+
+    /// Release the emergency freeze.
+    ///
+    /// Callable by either the wallet owner or the recovery guardian.
+    pub fn unlock_wallet(env: Env, caller: Address) -> Result<(), SmartWalletError> {
+        Self::require_initialized(&env)?;
+        Self::require_owner_or_guardian(&env, &caller)?;
+        caller.require_auth();
+
+        storage::set_locked(&env, false);
+        storage::bump_instance_ttl(&env);
+        events::wallet_unlocked(&env, &caller);
+        Ok(())
+    }
+
+    /// Query whether the wallet is currently under emergency lock.
+    pub fn is_locked(env: Env) -> Result<bool, SmartWalletError> {
+        Self::require_initialized(&env)?;
+        Ok(storage::is_locked(&env))
+    }
+
     /// Retrieve the recovery guardian address if configured.
     pub fn get_guardian(env: Env) -> Result<Option<Address>, SmartWalletError> {
         Self::require_initialized(&env)?;
@@ -218,6 +255,22 @@ impl SmartWalletContract {
             return Err(SmartWalletError::NotInitialized);
         }
         Ok(())
+    }
+
+    pub(crate) fn require_owner_or_guardian(
+        env: &Env,
+        caller: &Address,
+    ) -> Result<(), SmartWalletError> {
+        let owner = storage::get_owner(env).ok_or(SmartWalletError::NotInitialized)?;
+        if *caller == owner {
+            return Ok(());
+        }
+        if let Some(guardian) = storage::get_guardian(env) {
+            if *caller == guardian {
+                return Ok(());
+            }
+        }
+        Err(SmartWalletError::Unauthorized)
     }
 }
 

@@ -28,3 +28,7 @@ path = "test_factory.rs"
 [[test]]
 name = "test_recovery"
 path = "test_recovery.rs"
+
+[[test]]
+name = "test_lock"
+path = "test_lock.rs"

@@ -25,6 +25,11 @@ pub fn check_auth(
     auth_payload: &AuthPayload,
     _auth_context: &Vec<Context>,
 ) -> Result<(), SmartWalletError> {
+    // ── Emergency Lock Check ──────────────────────────────────────────────────
+    if storage::is_locked(env) {
+        return Err(SmartWalletError::WalletLocked);
+    }
+
     // ── 0. Verify operation hash matches host authorization payload ──────────
     let host_op_hash: BytesN<32> = signature_payload.to_bytes();
     if host_op_hash != auth_payload.signed.operation_hash {

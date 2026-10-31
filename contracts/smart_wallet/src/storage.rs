@@ -17,6 +17,8 @@ pub enum DataKey {
     Nonce,
     /// Recovery guardian address allowed to reset credentials.
     Guardian,
+    /// Emergency freeze/lock state.
+    Locked,
 }
 
 /// Thin wrapper around a list of credential IDs so it can be stored as one
@@ -131,6 +133,25 @@ pub fn get_guardian(env: &Env) -> Option<Address> {
 /// Remove the recovery guardian.
 pub fn remove_guardian(env: &Env) {
     env.storage().instance().remove(&DataKey::Guardian);
+}
+
+// ── Emergency Lock ────────────────────────────────────────────────────────────
+
+/// Returns `true` if the wallet is currently locked.
+pub fn is_locked(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Locked)
+        .unwrap_or(false)
+}
+
+/// Set the emergency locked status.
+pub fn set_locked(env: &Env, locked: bool) {
+    if locked {
+        env.storage().instance().set(&DataKey::Locked, &true);
+    } else {
+        env.storage().instance().remove(&DataKey::Locked);
+    }
 }
 
 // ── Ledger TTL management ─────────────────────────────────────────────────────
