@@ -15,6 +15,37 @@ export interface PasskeyCredential {
 }
 
 /**
+ * JSON-serializable representation of `PasskeyCredential`.
+ */
+export interface SerializedPasskeyCredential {
+  /** 32-character hex-encoded credential ID */
+  credentialIdHex: string;
+  /** 130-character hex-encoded uncompressed secp256r1 public key */
+  publicKeyHex: string;
+  /** Human-readable device label */
+  label: string;
+}
+
+/**
+ * Parameters for standard token transfer operation.
+ */
+export interface TransferOperationParams {
+  walletAddress: string;
+  assetContractId: string;
+  to: string;
+  amount: string;
+  memo?: string;
+}
+
+/**
+ * Result of building an operation payload.
+ */
+export interface OperationPayloadResult {
+  preimage: Uint8Array;
+  operationHash: Uint8Array;
+}
+
+/**
  * Payload that the passkey device signs.
  * Mirrors `SignaturePayload` in the Soroban contract.
  */

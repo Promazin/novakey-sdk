@@ -1,14 +1,7 @@
-import { derToRawSignature, sha256 } from './crypto.ts';
+import { derToRawSignature, P256_SPKI_HEADER, sha256 } from './crypto.ts';
 import type { ParsedAuthenticatorData, PasskeyCredential } from './types.ts';
 
-/**
- * Standard ASN.1 DER SubjectPublicKeyInfo (SPKI) 26-byte prefix for P-256 (secp256r1) uncompressed keys.
- * Sequence(89) -> Sequence(19) [OID id-ecPublicKey, OID prime256v1] -> BitString(66, 0 unused bits) -> 0x04 || X || Y
- */
-export const P256_SPKI_HEADER = new Uint8Array([
-  0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,
-  0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
-]);
+export { P256_SPKI_HEADER };
 
 /**
  * Maximum UTF-8 byte length for a credential label (matches contract MAX_LABEL_BYTES).

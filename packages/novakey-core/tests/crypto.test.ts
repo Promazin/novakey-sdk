@@ -4,14 +4,18 @@ import {
   base64UrlToBytes,
   bytesToBase64Url,
   bytesToHex,
+  decodeContractAddress,
   derToRawSignature,
   deriveCredentialSalt,
+  encodeContractAddress,
   hashPayload,
   hexToBytes,
   isLowSSignature,
+  predictContractAddress,
   rawToDerSignature,
   SECP256R1_HALF_N,
   SECP256R1_N,
+  verifySecp256r1Digest,
 } from '../src/crypto.ts';
 
 test('derToRawSignature converts valid DER to 64 bytes', () => {
@@ -151,4 +155,74 @@ test('bytesToBase64Url and base64UrlToBytes roundtrip', () => {
 
   const decoded = base64UrlToBytes(encoded);
   assert.deepStrictEqual(decoded, input);
+});
+
+test('encodeContractAddress and decodeContractAddress roundtrip with CRC16 verification', () => {
+  // Test with Soroban test address from ledger snapshot
+  const rawContractId = hexToBytes('0000000000000000000000000000000000000000000000000000000000000002');
+  const expectedStrKey = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4';
+
+  const encoded = encodeContractAddress(rawContractId);
+  assert.strictEqual(encoded, expectedStrKey);
+  assert.strictEqual(encoded.length, 56);
+  assert.ok(encoded.startsWith('C'));
+
+  const decoded = decodeContractAddress(encoded);
+  assert.deepStrictEqual(decoded, rawContractId);
+
+  // Rejects invalid prefix or tampered checksum
+  assert.throws(() => decodeContractAddress('GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4'), /Invalid Stellar contract address format/);
+  // Mutated checksum character at the end
+  const tampered = encoded.slice(0, 55) + (encoded[55] === '4' ? '5' : '4');
+  assert.throws(() => decodeContractAddress(tampered), /CRC16 checksum verification failed/);
+});
+
+test('predictContractAddress deterministically computes child contract address', () => {
+  const factoryAddress = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4';
+  const salt = hexToBytes('5dfbabeedf318bf33c0927c43d7630f51b82f351740301354fa3d7fc51f0132e');
+
+  const predicted = predictContractAddress(factoryAddress, salt);
+  assert.ok(predicted.startsWith('C'));
+  assert.strictEqual(predicted.length, 56);
+
+  // Deterministic repetition
+  const predicted2 = predictContractAddress(factoryAddress, salt);
+  assert.strictEqual(predicted, predicted2);
+
+  // Different salt yields different address
+  const otherSalt = new Uint8Array(salt);
+  otherSalt[0] ^= 0xff;
+  const predictedOther = predictContractAddress(factoryAddress, otherSalt);
+  assert.notStrictEqual(predicted, predictedOther);
+});
+
+test('verifySecp256r1Digest validates real secp256r1 signatures', async () => {
+  const keyPair = await crypto.subtle.generateKey(
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['sign', 'verify']
+  );
+  const rawPub = new Uint8Array(await crypto.subtle.exportKey('raw', keyPair.publicKey));
+  const digest = new Uint8Array(32).fill(0x77);
+
+  const rawSig = new Uint8Array(
+    await crypto.subtle.sign({ name: 'ECDSA', hash: { name: 'SHA-256' } }, keyPair.privateKey, digest)
+  );
+
+  // Compact 64-byte signature verifies
+  assert.strictEqual(verifySecp256r1Digest(rawPub, digest, rawSig), true);
+
+  // DER formatted signature also verifies
+  const derSig = rawToDerSignature(rawSig);
+  assert.strictEqual(verifySecp256r1Digest(rawPub, digest, derSig), true);
+
+  // Tampered digest fails
+  const tamperedDigest = new Uint8Array(digest);
+  tamperedDigest[0] ^= 0x01;
+  assert.strictEqual(verifySecp256r1Digest(rawPub, tamperedDigest, rawSig), false);
+
+  // Tampered signature fails
+  const tamperedSig = new Uint8Array(rawSig);
+  tamperedSig[0] ^= 0x01;
+  assert.strictEqual(verifySecp256r1Digest(rawPub, digest, tamperedSig), false);
 });

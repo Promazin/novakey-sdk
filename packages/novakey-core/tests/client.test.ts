@@ -249,3 +249,96 @@ test('NovaKeyWalletClient serializeAuthPayload and deserializeAuthPayload roundt
   const restored = client.deserializeAuthPayload(serialized);
   assert.deepStrictEqual(restored, payload);
 });
+
+test('NovaKeyWalletClient predictWalletAddress computes valid Stellar contract address', () => {
+  const factoryContractId = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4';
+  const client = new NovaKeyWalletClient({
+    network: 'testnet',
+    rpcUrl: 'https://soroban-testnet.stellar.org',
+    factoryContractId,
+  });
+
+  const credentialId = new Uint8Array(16).fill(0x42);
+  const predicted = client.predictWalletAddress(credentialId);
+
+  assert.ok(predicted.startsWith('C'));
+  assert.strictEqual(predicted.length, 56);
+  assert.strictEqual(predicted, client.predictWalletAddress(credentialId));
+
+  // Without factory ID in config or arg throws
+  const clientNoFactory = new NovaKeyWalletClient({
+    network: 'testnet',
+    rpcUrl: 'https://soroban-testnet.stellar.org',
+  });
+  assert.throws(() => clientNoFactory.predictWalletAddress(credentialId), /Factory contract ID must be configured/);
+});
+
+test('NovaKeyWalletClient buildTransferOperation and verifyAuthPayload work end-to-end', async () => {
+  const client = new NovaKeyWalletClient({
+    network: 'testnet',
+    rpcUrl: 'https://soroban-testnet.stellar.org',
+  });
+
+  const keyPair = await crypto.subtle.generateKey(
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['sign', 'verify']
+  );
+  const publicKey = new Uint8Array(await crypto.subtle.exportKey('raw', keyPair.publicKey));
+
+  const transferOp = client.buildTransferOperation({
+    walletAddress: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
+    assetContractId: 'CUSDC000000000000000000000000000000000000000000000000000',
+    to: 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+    amount: '100.50',
+    memo: 'Invoice 1024',
+  });
+
+  assert.strictEqual(transferOp.operationHash.length, 32);
+
+  const nonce = 0n;
+  const payloadDigest = client.hashOperationPayload(nonce, transferOp.operationHash);
+  const signature = new Uint8Array(
+    await crypto.subtle.sign({ name: 'ECDSA', hash: { name: 'SHA-256' } }, keyPair.privateKey, payloadDigest)
+  );
+
+  const authPayload = client.buildAuthPayload({
+    credentialId: new Uint8Array(16).fill(0x01),
+    nonce,
+    operationHash: transferOp.operationHash,
+    signature,
+  });
+
+  assert.strictEqual(client.verifyAuthPayload(authPayload, publicKey), true);
+
+  // Tampering operation hash invalidates auth verification
+  const tamperedPayload = {
+    ...authPayload,
+    signed: {
+      ...authPayload.signed,
+      operationHash: new Uint8Array(32).fill(0xff),
+    },
+  };
+  assert.strictEqual(client.verifyAuthPayload(tamperedPayload, publicKey), false);
+});
+
+test('NovaKeyWalletClient serializeCredential and deserializeCredential roundtrip', () => {
+  const client = new NovaKeyWalletClient({
+    network: 'testnet',
+    rpcUrl: 'https://soroban-testnet.stellar.org',
+  });
+
+  const credential = {
+    credentialId: new Uint8Array(16).fill(0x5a),
+    publicKey: new Uint8Array(65).fill(0x7b),
+    label: 'Corporate YubiKey 5C',
+  };
+
+  const serialized = client.serializeCredential(credential);
+  assert.strictEqual(typeof serialized.credentialIdHex, 'string');
+  assert.strictEqual(serialized.credentialIdHex.length, 32);
+  assert.strictEqual(serialized.label, 'Corporate YubiKey 5C');
+
+  const restored = client.deserializeCredential(serialized);
+  assert.deepStrictEqual(restored, credential);
+});

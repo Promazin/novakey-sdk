@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createPublicKey, verify } from 'node:crypto';
 
 /**
  * Curve order (n) for NIST P-256 / secp256r1.
@@ -258,4 +258,164 @@ export function base64UrlToBytes(base64url: string): Uint8Array {
     throw new Error('Invalid base64url string');
   }
   return new Uint8Array(Buffer.from(base64url, 'base64url'));
+}
+
+/**
+ * Standard ASN.1 DER SubjectPublicKeyInfo (SPKI) 26-byte prefix for P-256 (secp256r1) uncompressed keys.
+ */
+export const P256_SPKI_HEADER = new Uint8Array([
+  0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,
+  0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+]);
+
+/**
+ * Standard RFC 4648 Base32 alphabet used by Stellar StrKey.
+ */
+const RFC4648_BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+/**
+ * Compute CRC16-XMODEM checksum used in Stellar StrKey encoding.
+ */
+export function crc16Xmodem(data: Uint8Array): number {
+  let crc = 0x0000;
+  for (const byte of data) {
+    let code = (crc >>> 8) & 0xff;
+    code ^= byte & 0xff;
+    code ^= code >>> 4;
+    crc = (crc << 8) & 0xffff;
+    crc ^= code;
+    code = (code << 5) & 0xffff;
+    crc ^= code;
+    code = (code << 7) & 0xffff;
+    crc ^= code;
+  }
+  return crc;
+}
+
+/**
+ * Encode bytes to RFC 4648 Base32 string (no padding).
+ */
+export function base32Encode(data: Uint8Array): string {
+  let bits = 0;
+  let value = 0;
+  let output = '';
+  for (let i = 0; i < data.length; i++) {
+    value = (value << 8) | data[i];
+    bits += 8;
+    while (bits >= 5) {
+      output += RFC4648_BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) {
+    output += RFC4648_BASE32_ALPHABET[(value << (5 - bits)) & 31];
+  }
+  return output;
+}
+
+/**
+ * Decode RFC 4648 Base32 string into Uint8Array.
+ */
+export function base32Decode(str: string): Uint8Array {
+  let bits = 0;
+  let value = 0;
+  const output: number[] = [];
+  for (let i = 0; i < str.length; i++) {
+    const idx = RFC4648_BASE32_ALPHABET.indexOf(str[i]);
+    if (idx === -1) {
+      throw new Error(`Invalid Base32 character '${str[i]}' at index ${i}`);
+    }
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) {
+      output.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return new Uint8Array(output);
+}
+
+/**
+ * Encode a 32-byte Soroban contract ID hash into a canonical Stellar contract address (StrKey, 'C...').
+ */
+export function encodeContractAddress(contractId: Uint8Array): string {
+  if (contractId.length !== 32) {
+    throw new Error(`Contract ID must be 32 bytes, got ${contractId.length}`);
+  }
+  const payload = new Uint8Array(33);
+  payload[0] = 0x10; // StrKey contract version byte (16)
+  payload.set(contractId, 1);
+
+  const checksum = crc16Xmodem(payload);
+  const full = new Uint8Array(35);
+  full.set(payload, 0);
+  full[33] = checksum & 0xff;
+  full[34] = (checksum >>> 8) & 0xff;
+
+  return base32Encode(full);
+}
+
+/**
+ * Decode a canonical Stellar contract address ('C...') into its 32-byte contract ID hash.
+ */
+export function decodeContractAddress(address: string): Uint8Array {
+  if (typeof address !== 'string' || address.length !== 56 || !address.startsWith('C')) {
+    throw new Error('Invalid Stellar contract address format (expected 56 characters starting with C)');
+  }
+  const decoded = base32Decode(address);
+  if (decoded.length !== 35 || decoded[0] !== 0x10) {
+    throw new Error('Invalid StrKey payload length or contract version prefix');
+  }
+  const payload = decoded.subarray(0, 33);
+  const calculatedCrc = crc16Xmodem(payload);
+  const storedCrc = decoded[33] | (decoded[34] << 8);
+  if (calculatedCrc !== storedCrc) {
+    throw new Error('Invalid Stellar contract address: CRC16 checksum verification failed');
+  }
+  return decoded.slice(1, 33);
+}
+
+/**
+ * Predict the deterministic Soroban contract address for a contract deployed via `deployer.with_current_contract(salt)`.
+ * Layout: `SHA-256(deployer_contract_id_32_bytes || salt_32_bytes)` encoded as StrKey.
+ */
+export function predictContractAddress(deployerAddress: string, salt: Uint8Array): string {
+  if (salt.length !== 32) {
+    throw new Error(`Deployment salt must be 32 bytes, got ${salt.length}`);
+  }
+  const deployerContractId = decodeContractAddress(deployerAddress);
+  const buffer = new Uint8Array(64);
+  buffer.set(deployerContractId, 0);
+  buffer.set(salt, 32);
+  const addressHash = sha256(buffer);
+  return encodeContractAddress(addressHash);
+}
+
+/**
+ * Verify an ECDSA secp256r1 signature over a 32-byte SHA-256 digest using Node/Web Crypto.
+ * Supports both 64-byte compact (r || s) and ASN.1 DER signatures.
+ */
+export function verifySecp256r1Digest(
+  publicKey: Uint8Array,
+  digest: Uint8Array,
+  signature: Uint8Array
+): boolean {
+  if (publicKey.length !== 65 || publicKey[0] !== 0x04) {
+    throw new Error('Public key must be 65-byte uncompressed secp256r1 (0x04 prefix)');
+  }
+  if (digest.length !== 32) {
+    throw new Error(`Digest must be 32 bytes, got ${digest.length}`);
+  }
+
+  const derSig = signature.length === 64 ? rawToDerSignature(signature) : signature;
+  const spki = new Uint8Array(91);
+  spki.set(P256_SPKI_HEADER, 0);
+  spki.set(publicKey, 26);
+
+  try {
+    const keyObj = createPublicKey({ key: Buffer.from(spki), format: 'der', type: 'spki' });
+    return verify(null, digest, keyObj, derSig);
+  } catch {
+    return false;
+  }
 }

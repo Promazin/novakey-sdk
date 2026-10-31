@@ -3,13 +3,19 @@ import {
   deriveCredentialSalt,
   hashPayload,
   hexToBytes,
+  predictContractAddress,
+  sha256,
+  verifySecp256r1Digest,
 } from './crypto.ts';
 import type {
   AuthPayload,
   NovaKeyConfig,
+  OperationPayloadResult,
   PasskeyCredential,
   SerializedAuthPayload,
+  SerializedPasskeyCredential,
   SignaturePayload,
+  TransferOperationParams,
 } from './types.ts';
 
 /**
@@ -106,5 +112,69 @@ export class NovaKeyWalletClient {
       operationHash: hexToBytes(serialized.operationHashHex),
       signature: hexToBytes(serialized.signatureHex),
     });
+  }
+
+  /**
+   * Predict the deterministic smart wallet contract address for a given credential.
+   */
+  public predictWalletAddress(
+    credentialId: Uint8Array,
+    factoryContractId?: string
+  ): string {
+    const factory = factoryContractId ?? this.config.factoryContractId;
+    if (!factory) {
+      throw new Error(
+        'Factory contract ID must be configured or passed to predictWalletAddress'
+      );
+    }
+    const salt = this.deriveSalt(credentialId);
+    return predictContractAddress(factory, salt);
+  }
+
+  /**
+   * Build the operation preimage and 32-byte SHA-256 operation hash for a standard transfer.
+   */
+  public buildTransferOperation(params: TransferOperationParams): OperationPayloadResult {
+    const memo = params.memo ?? '';
+    const preimage = new TextEncoder().encode(
+      `${params.walletAddress}:${params.assetContractId}:${params.to}:${params.amount}:${memo}`
+    );
+    const operationHash = sha256(preimage);
+    return { preimage, operationHash };
+  }
+
+  /**
+   * Verify an `AuthPayload` against a 65-byte uncompressed public key.
+   */
+  public verifyAuthPayload(payload: AuthPayload, publicKey: Uint8Array): boolean {
+    const payloadHash = this.hashOperationPayload(
+      payload.signed.nonce,
+      payload.signed.operationHash
+    );
+    return verifySecp256r1Digest(publicKey, payloadHash, payload.signature);
+  }
+
+  /**
+   * Serialize a `PasskeyCredential` into a JSON transport representation.
+   */
+  public serializeCredential(credential: PasskeyCredential): SerializedPasskeyCredential {
+    return {
+      credentialIdHex: bytesToHex(credential.credentialId),
+      publicKeyHex: bytesToHex(credential.publicKey),
+      label: credential.label,
+    };
+  }
+
+  /**
+   * Deserialize a `SerializedPasskeyCredential` back into typed byte buffers.
+   */
+  public deserializeCredential(
+    serialized: SerializedPasskeyCredential
+  ): PasskeyCredential {
+    return {
+      credentialId: hexToBytes(serialized.credentialIdHex),
+      publicKey: hexToBytes(serialized.publicKeyHex),
+      label: serialized.label,
+    };
   }
 }
