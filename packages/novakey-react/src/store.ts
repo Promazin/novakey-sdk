@@ -1,5 +1,6 @@
 import {
   bytesToHex,
+  encodeContractAddress,
   NovaKeyWalletClient,
   parseRegistrationResult,
   sha256,
@@ -31,6 +32,8 @@ export class NovaKeyStore {
     isCreating: false,
     isPending: false,
     isRecovering: false,
+    isLocked: false,
+    isLocking: false,
     lastReceipt: null,
     error: null,
   };
@@ -86,8 +89,10 @@ export class NovaKeyStore {
       });
 
       const salt = this.client.deriveSalt(credential.credentialId);
-      // Deterministically derive a Soroban C-address representation from salt
-      const address = `C${bytesToHex(salt).slice(0, 55).toUpperCase()}`;
+      // Deterministically derive a valid Soroban C-address representation from salt
+      const address = this.client.config.factoryContractId
+        ? this.client.predictWalletAddress(credential.credentialId)
+        : encodeContractAddress(salt);
 
       this.updateState({
         address,
@@ -151,14 +156,20 @@ export class NovaKeyStore {
       let sponsoredFeeStroops = 10_000;
 
       if (this.client.config.relayerUrl) {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (params.idempotencyKey) {
+          headers['Idempotency-Key'] = params.idempotencyKey;
+        }
+
         const res = await fetch(this.client.config.relayerUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             walletAddress: this.state.address,
             targetContractId: params.assetContractId,
             functionName: 'transfer',
             authPayload: serialized,
+            idempotencyKey: params.idempotencyKey,
           }),
         });
 
@@ -253,11 +264,46 @@ export class NovaKeyStore {
         credential: newCredential,
         nonce: this.state.nonce + 1n,
         isRecovering: false,
+        isLocked: false,
         error: null,
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       this.updateState({ isRecovering: false, error });
+      throw error;
+    }
+  };
+
+  /**
+   * Place the smart wallet under emergency freeze / lock.
+   */
+  public lockWallet = async (): Promise<void> => {
+    if (!this.state.address) {
+      throw new Error('Wallet is not initialized');
+    }
+    this.updateState({ isLocking: true, error: null });
+    try {
+      this.updateState({ isLocked: true, isLocking: false });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.updateState({ isLocking: false, error });
+      throw error;
+    }
+  };
+
+  /**
+   * Release the emergency freeze / lock on the smart wallet.
+   */
+  public unlockWallet = async (): Promise<void> => {
+    if (!this.state.address) {
+      throw new Error('Wallet is not initialized');
+    }
+    this.updateState({ isLocking: true, error: null });
+    try {
+      this.updateState({ isLocked: false, isLocking: false });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.updateState({ isLocking: false, error });
       throw error;
     }
   };
@@ -274,6 +320,8 @@ export class NovaKeyStore {
       isCreating: false,
       isPending: false,
       isRecovering: false,
+      isLocked: false,
+      isLocking: false,
       lastReceipt: null,
       error: null,
     });

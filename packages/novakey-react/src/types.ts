@@ -21,6 +21,7 @@ export interface SponsoredTxParams {
   amount: string;
   assetContractId: string;
   memo?: string;
+  idempotencyKey?: string;
 }
 
 /**
@@ -58,6 +59,8 @@ export interface NovaKeyState {
   isCreating: boolean;
   isPending: boolean;
   isRecovering: boolean;
+  isLocked: boolean;
+  isLocking: boolean;
   lastReceipt: SponsoredTxReceipt | null;
   error: Error | null;
 }

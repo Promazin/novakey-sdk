@@ -49,21 +49,27 @@ async function main() {
   console.log(`   Credential ID:  ${formatted.credentialIdHex}`);
   console.log(`   Public Key:     ${formatted.publicKeyHex.slice(0, 20)}...\n`);
 
-  // 3. Derive deterministic deployment salt
+  // 3. Derive deterministic deployment salt and predict wallet address
   const salt = client.deriveSalt(mockCredentialId);
-  console.log('3. Deterministic Deployment Salt (SHA-256):');
-  console.log(`   Salt: ${bytesToHex(salt)}\n`);
+  const predictedAddress = client.predictWalletAddress(mockCredentialId);
+  console.log('3. Deterministic Deployment Salt & Address Prediction:');
+  console.log(`   Salt:              ${bytesToHex(salt)}`);
+  console.log(`   Predicted Address: ${predictedAddress}\n`);
 
-  // 4. Construct Transaction Intent Payload
+  // 4. Construct Transfer Operation Intent Payload
   const nonce = 0n;
-  const mockOperationHash = hexToBytes(
-    'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
-  );
+  const transferOp = client.buildTransferOperation({
+    walletAddress: predictedAddress,
+    assetContractId: 'CUSDC000000000000000000000000000000000000000000000000000',
+    to: 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+    amount: '25.00',
+    memo: 'Cross-border remittance',
+  });
 
-  const payloadHash = client.hashOperationPayload(nonce, mockOperationHash);
+  const payloadHash = client.hashOperationPayload(nonce, transferOp.operationHash);
   console.log('4. Transaction Signing Digest:');
   console.log(`   Nonce:        ${nonce}`);
-  console.log(`   Operation:    ${bytesToHex(mockOperationHash)}`);
+  console.log(`   Operation:    ${bytesToHex(transferOp.operationHash)}`);
   console.log(`   Payload Hash: ${bytesToHex(payloadHash)}\n`);
 
   // 5. Build Compact Low-s Signature (mirroring WebAuthn DER conversion)
@@ -77,7 +83,7 @@ async function main() {
   const authPayload = client.buildAuthPayload({
     credentialId: mockCredentialId,
     nonce,
-    operationHash: mockOperationHash,
+    operationHash: transferOp.operationHash,
     signature: normalizedSig,
   });
 
@@ -86,21 +92,38 @@ async function main() {
   console.log(`   Nonce Validated:  ${authPayload.signed.nonce}`);
   console.log(`   Credential ID:    ${bytesToHex(authPayload.credentialId)}\n`);
 
-  // 6. Submit to Gas-Sponsoring Relayer Engine (@novakey/relayer-node)
+  // 6. Submit to Gas-Sponsoring Relayer Engine with Dry-Run Simulation & Idempotency
   const relayer = new RelayerEngine({ maxFeeStroops: 50_000 });
-  const walletAddress = `C${bytesToHex(salt).slice(0, 55).toUpperCase()}`;
-  const receipt = await relayer.relay({
-    walletAddress,
+  const serializedAuth = client.serializeAuthPayload(authPayload);
+
+  // Dry-run simulation first
+  const sim = relayer.simulate({
+    walletAddress: predictedAddress,
     targetContractId: 'CUSDC000000000000000000000000000000000000000000000000000',
     functionName: 'transfer',
-    authPayload: client.serializeAuthPayload(authPayload),
+    authPayload: serializedAuth,
     requestedFeeStroops: 10_000,
   });
+  console.log('6. Pre-flight Simulation:');
+  console.log(`   Status:           ${sim.status}`);
+  console.log(`   Estimated Fee:    ${sim.estimatedFeeStroops} stroops`);
+  console.log(`   Predicted Nonce:  ${sim.predictedNonce}\n`);
 
-  console.log('6. Relayer Gas-Sponsored Receipt:');
+  // Execute relay with idempotency key
+  const receipt = await relayer.relay({
+    walletAddress: predictedAddress,
+    targetContractId: 'CUSDC000000000000000000000000000000000000000000000000000',
+    functionName: 'transfer',
+    authPayload: serializedAuth,
+    requestedFeeStroops: 10_000,
+    idempotencyKey: 'tx-req-transfer-001',
+  });
+
+  console.log('7. Relayer Gas-Sponsored Receipt:');
   console.log(`   Wallet Address:   ${receipt.walletAddress}`);
   console.log(`   Transaction Hash: ${receipt.txHash}`);
   console.log(`   Sponsored Fee:    ${receipt.sponsoredFeeStroops} stroops`);
+  console.log(`   Next Nonce:       ${relayer.getLatestNonce(predictedAddress)}`);
   console.log(`   Status:           ${receipt.status}\n`);
 
   console.log('✅ Flow simulation completed successfully.');

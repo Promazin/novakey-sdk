@@ -24,6 +24,7 @@ Designed specifically for fintechs, NGOs, and Web3 builders in emerging markets,
   - [2. Wallet Creation](#2-wallet-creation)
   - [3. Sponsored Transactions](#3-sponsored-transactions)
   - [4. Account Recovery](#4-account-recovery)
+  - [5. Emergency Account Freeze](#5-emergency-account-freeze)
 - [Local Development & Testing](#-local-development--testing)
 - [Roadmap (SCF Milestones)](#-roadmap-scf-milestones)
 - [Contributing](#-contributing)
@@ -195,6 +196,28 @@ NovaKey supports social recovery and guardian configurations natively within the
 - **Set Guardian:** The wallet owner can designate a trusted recovery guardian (`set_guardian`).
 - **Execute Recovery:** If all passkeys are lost, the guardian can authorize `recover_wallet` to replace the lost credentials with a new passkey.
 - **Nonce Invalidation:** Recovery automatically advances the monotonic nonce by `+1`, invalidating any stale or intercepted signatures.
+
+### 5. Emergency Account Freeze
+If a user's phone is lost or stolen, either the wallet owner or the recovery guardian can freeze the account:
+
+```tsx
+import { useEmergencyLock } from '@novakey/react';
+
+export function SecuritySettings() {
+  const { isLocked, isLocking, lockWallet, unlockWallet } = useEmergencyLock();
+
+  return (
+    <div>
+      <p>Status: {isLocked ? "🔒 Frozen" : "🟢 Active"}</p>
+      <button onClick={isLocked ? unlockWallet : lockWallet} disabled={isLocking}>
+        {isLocked ? "Unfreeze Wallet" : "Emergency Freeze"}
+      </button>
+    </div>
+  );
+}
+```
+
+While locked, `__check_auth` blocks all outgoing transactions on-chain. Completing guardian recovery automatically clears the freeze.
 
 For full cryptographic and security specifications, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 

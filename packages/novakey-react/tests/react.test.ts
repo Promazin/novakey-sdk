@@ -7,6 +7,7 @@ import {
 } from '../../novakey-relayer-node/src/index.ts';
 import {
   NovaKeyProvider,
+  useEmergencyLock,
   useNovaKey,
   useRecovery,
   useTransaction,
@@ -149,4 +150,48 @@ test('useRecovery manages guardian configuration and executes credential recover
   const updated = useNovaKey();
   assert.strictEqual(updated.credential?.label, 'Recovered iPhone');
   assert.strictEqual(updated.nonce, 1n);
+});
+
+test('useEmergencyLock manages freeze state and recovers seamlessly', async () => {
+  NovaKeyProvider({
+    network: 'testnet',
+    rpcUrl: 'https://soroban-testnet.stellar.org',
+    authenticator: createMockAuthenticator(),
+  });
+
+  await useNovaKey().createWallet({
+    relyingPartyName: 'NovaKey Emergency Freeze',
+    userName: 'security@example.com',
+  });
+
+  const { isLocked, lockWallet, unlockWallet } = useEmergencyLock();
+  assert.strictEqual(isLocked, false);
+
+  // Lock wallet
+  await lockWallet();
+  assert.strictEqual(useEmergencyLock().isLocked, true);
+  assert.strictEqual(useNovaKey().isLocked, true);
+
+  // Unlock wallet
+  await unlockWallet();
+  assert.strictEqual(useEmergencyLock().isLocked, false);
+
+  // Re-lock and verify recovery resets lock
+  await lockWallet();
+  assert.strictEqual(useEmergencyLock().isLocked, true);
+
+  const recovery = useRecovery();
+  await recovery.setGuardian('GGUARDIAN00000000000000000000000000000000000000000000000');
+
+  const newPk = new Uint8Array(65);
+  newPk[0] = 0x04;
+  newPk.fill(0x99, 1);
+  await recovery.recoverWallet({
+    newRawId: new Uint8Array(16).fill(0x33),
+    newPublicKeyBytes: newPk,
+    newLabel: 'New Secure Device',
+  });
+
+  // Automatically unlocked upon guardian recovery
+  assert.strictEqual(useEmergencyLock().isLocked, false);
 });

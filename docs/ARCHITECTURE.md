@@ -79,8 +79,9 @@ Benefits:
 
 ---
 
-## 🛡️ Account Recovery (Guardian Model)
+## 🛡️ Account Recovery & Security Controls
 
+### 1. Guardian Social Recovery
 If a user loses all registered passkeys, NovaKey provides non-custodial social recovery:
 1. The wallet owner registers a trusted `guardian: Address` via `set_guardian`.
 2. The guardian can trigger `recover_wallet(new_credential_id, new_public_key, new_label)`:
@@ -88,7 +89,25 @@ If a user loses all registered passkeys, NovaKey provides non-custodial social r
    - Clears all existing registered credentials.
    - Installs the new passkey credential as the sole active key.
    - Advances the wallet nonce by $+1$ to invalidate any pending unexecuted signatures.
+   - Automatically lifts any active emergency lock.
    - Emits a `wallet_recovered` contract event.
+
+### 2. Emergency Freeze / Account Lock
+To protect against stolen physical devices or suspected credential compromise:
+- **Locking:** Either the wallet `owner` or the recovery `guardian` can invoke `lock_wallet(caller)`.
+- **Enforcement:** While locked, `__check_auth` immediately reverts with `SmartWalletError::WalletLocked (13)`, rejecting all outgoing transaction attempts.
+- **Unlocking:** Either the `owner` or `guardian` can invoke `unlock_wallet(caller)`, or completing guardian recovery automatically resets the lock.
+
+---
+
+## ⚡ Gas-Sponsoring Relayer Architecture
+
+The `@novakey/relayer-node` service provides gas abstraction and fee-bump sponsorship:
+- **Mempool Nonce Tracking:** Prevents transaction replay attacks before on-chain confirmation.
+- **Idempotency Protection:** Clients attach an `idempotencyKey` / `Idempotency-Key` header so network retries return identical receipts without failing or double-sponsoring fees.
+- **Pre-flight Simulation:** `POST /api/v1/simulate` validates signature structures and fee limits without broadcasting.
+- **Nonce Discovery:** `GET /api/v1/nonce/:walletAddress` allows clients to discover the next available monotonic nonce.
+- **Transaction History:** `GET /api/v1/history/:walletAddress` returns timestamped audit records for a wallet.
 
 ---
 
@@ -105,6 +124,8 @@ Both `SmartWalletContract` and `FactoryContract` emit structured contract events
 | `SmartWallet` | `("guardian_set", guardian)` | `()` | Recovery guardian set |
 | `SmartWallet` | `("guardian_removed", ())` | `()` | Recovery guardian removed |
 | `SmartWallet` | `("wallet_recovered", guardian)` | `new_credential_id` | Wallet recovered |
+| `SmartWallet` | `("wallet_locked", caller)` | `()` | Emergency freeze activated |
+| `SmartWallet` | `("wallet_unlocked", caller)` | `()` | Emergency freeze lifted |
 | `SmartWallet` | `("ownership_transferred", old_owner)` | `new_owner` | Wallet owner rotated |
 | `SmartWallet` | `("wallet_upgraded", owner)` | `new_wasm_hash` | Wallet WASM upgraded |
 | `Factory` | `("wallet_deployed", owner)` | `(wallet_address, credential_id)` | Wallet deployed |
