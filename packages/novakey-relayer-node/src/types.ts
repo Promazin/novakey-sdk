@@ -14,6 +14,8 @@ export interface RelayRequest {
   authPayload: SerializedAuthPayload;
   /** Requested fee cap in stroops */
   requestedFeeStroops?: number;
+  /** Optional idempotency key for safe client retries */
+  idempotencyKey?: string;
 }
 
 /**
@@ -34,6 +36,22 @@ export interface RelayReceipt {
   sponsoredFeeStroops: number;
   /** Unix timestamp (ms) when the transaction was processed */
   timestamp: number;
+  /** Optional idempotency key associated with this transaction */
+  idempotencyKey?: string;
+  /** True if returned from idempotent cache replay */
+  isIdempotentReplay?: boolean;
+}
+
+/**
+ * Result returned by the simulation / dry-run endpoint.
+ */
+export interface SimulateResult {
+  status: 'OK';
+  walletAddress: string;
+  predictedNonce: string;
+  estimatedFeeStroops: number;
+  allowedTarget: boolean;
+  validSignature: boolean;
 }
 
 /**
@@ -64,4 +82,6 @@ export interface RelayerMetrics {
   totalRelayed: number;
   totalRejected: number;
   totalFeeSponsoredStroops: number;
+  activeNoncesTracked: number;
+  idempotencyHits: number;
 }

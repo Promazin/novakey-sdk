@@ -145,7 +145,50 @@ test('createRelayerServer handles /health, /api/v1/relay, and /api/v1/tx/:hash o
     // 4. Query non-existent transaction returns 404
     const missingRes = await fetch(`${baseUrl}/api/v1/tx/deadbeef`);
     assert.strictEqual(missingRes.status, 404);
+
+    // 5. Query nonce for wallet
+    const nonceRes = await fetch(`${baseUrl}/api/v1/nonce/CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM`);
+    assert.strictEqual(nonceRes.status, 200);
+    const nonceJson = (await nonceRes.json()) as { nextNonce: string };
+    assert.strictEqual(nonceJson.nextNonce, '11');
+
+    // 6. Dry-run simulation endpoint
+    const simRes = await fetch(`${baseUrl}/api/v1/simulate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(createValidRelayRequest('11')),
+    });
+    assert.strictEqual(simRes.status, 200);
+    const simJson = (await simRes.json()) as { status: string; validSignature: boolean };
+    assert.strictEqual(simJson.status, 'OK');
+    assert.strictEqual(simJson.validSignature, true);
+
+    // 7. Wallet transaction history endpoint
+    const histRes = await fetch(`${baseUrl}/api/v1/history/CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM`);
+    assert.strictEqual(histRes.status, 200);
+    const histJson = (await histRes.json()) as { count: number; receipts: unknown[] };
+    assert.strictEqual(histJson.count, 1);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+test('RelayerEngine idempotency deduplication caches and prevents replay errors on retry', async () => {
+  const engine = new RelayerEngine();
+  const req = createValidRelayRequest('5');
+  req.idempotencyKey = 'idemp-req-unique-uuid-123';
+
+  // First submission
+  const firstReceipt = await engine.relay(req);
+  assert.strictEqual(firstReceipt.status, 'SUCCESS');
+  assert.strictEqual(firstReceipt.nonce, '5');
+
+  // Network retry with identical idempotency key returns cached receipt without 409 error
+  const retriedReceipt = await engine.relay(req);
+  assert.strictEqual(retriedReceipt.txHash, firstReceipt.txHash);
+  assert.strictEqual(retriedReceipt.isIdempotentReplay, true);
+
+  const metrics = engine.getMetrics();
+  assert.strictEqual(metrics.totalRelayed, 1);
+  assert.strictEqual(metrics.idempotencyHits, 1);
 });

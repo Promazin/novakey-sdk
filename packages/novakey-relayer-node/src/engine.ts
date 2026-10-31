@@ -11,6 +11,7 @@ import type {
   RelayerSubmitter,
   RelayReceipt,
   RelayRequest,
+  SimulateResult,
 } from './types.ts';
 
 /**
@@ -40,10 +41,13 @@ export class RelayerEngine {
   private readonly receipts = new Map<string, RelayReceipt>();
   private readonly consumedNonces = new Set<string>();
   private readonly rateLimitWindows = new Map<string, number[]>();
+  private readonly idempotencyCache = new Map<string, RelayReceipt>();
+  private readonly walletHighestNonces = new Map<string, bigint>();
 
   private totalRelayed = 0;
   private totalRejected = 0;
   private totalFeeSponsoredStroops = 0;
+  private idempotencyHits = 0;
 
   constructor(
     policy: RelayerPolicyConfig = {},
@@ -142,6 +146,15 @@ export class RelayerEngine {
    */
   public async relay(request: RelayRequest): Promise<RelayReceipt> {
     try {
+      // Return cached receipt if idempotency key was previously relayed
+      if (request.idempotencyKey) {
+        const cached = this.idempotencyCache.get(request.idempotencyKey);
+        if (cached) {
+          this.idempotencyHits += 1;
+          return { ...cached, isIdempotentReplay: true };
+        }
+      }
+
       this.validateRequest(request);
       this.enforceRateLimit(request.walletAddress);
 
@@ -175,6 +188,13 @@ export class RelayerEngine {
 
       this.consumedNonces.add(nonceKey);
 
+      // Track highest nonce seen for this wallet
+      const reqNonce = BigInt(request.authPayload.nonce);
+      const currentHighest = this.walletHighestNonces.get(request.walletAddress) ?? 0n;
+      if (reqNonce >= currentHighest) {
+        this.walletHighestNonces.set(request.walletAddress, reqNonce + 1n);
+      }
+
       const receipt: RelayReceipt = {
         txHash,
         status: 'SUCCESS',
@@ -183,9 +203,14 @@ export class RelayerEngine {
         nonce: request.authPayload.nonce,
         sponsoredFeeStroops,
         timestamp: Date.now(),
+        idempotencyKey: request.idempotencyKey,
       };
 
       this.receipts.set(txHash, receipt);
+      if (request.idempotencyKey) {
+        this.idempotencyCache.set(request.idempotencyKey, receipt);
+      }
+
       this.totalRelayed += 1;
       this.totalFeeSponsoredStroops += sponsoredFeeStroops;
 
@@ -194,6 +219,42 @@ export class RelayerEngine {
       this.totalRejected += 1;
       throw err;
     }
+  }
+
+  /**
+   * Dry-run simulation of a relay request without advancing nonces or broadcasting.
+   */
+  public simulate(request: RelayRequest): SimulateResult {
+    this.validateRequest(request);
+
+    const estimatedFee = request.requestedFeeStroops ?? Math.min(10_000, this.policy.maxFeeStroops);
+    const allowed = this.policy.allowedTargetContracts.length === 0 ||
+      (request.targetContractId !== undefined && this.policy.allowedTargetContracts.includes(request.targetContractId));
+
+    return {
+      status: 'OK',
+      walletAddress: request.walletAddress,
+      predictedNonce: request.authPayload.nonce,
+      estimatedFeeStroops: estimatedFee,
+      allowedTarget: allowed,
+      validSignature: true,
+    };
+  }
+
+  /**
+   * Retrieve the next expected nonce for a wallet based on relayed transactions.
+   */
+  public getLatestNonce(walletAddress: string): bigint {
+    return this.walletHighestNonces.get(walletAddress) ?? 0n;
+  }
+
+  /**
+   * Retrieve all transaction receipts for a given wallet address.
+   */
+  public getWalletReceipts(walletAddress: string): RelayReceipt[] {
+    return Array.from(this.receipts.values())
+      .filter((r) => r.walletAddress === walletAddress)
+      .sort((a, b) => b.timestamp - a.timestamp);
   }
 
   /**
@@ -211,6 +272,8 @@ export class RelayerEngine {
       totalRelayed: this.totalRelayed,
       totalRejected: this.totalRejected,
       totalFeeSponsoredStroops: this.totalFeeSponsoredStroops,
+      activeNoncesTracked: this.consumedNonces.size,
+      idempotencyHits: this.idempotencyHits,
     };
   }
 

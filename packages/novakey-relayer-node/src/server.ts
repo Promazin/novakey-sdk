@@ -13,7 +13,7 @@ export function createRelayerServer(engine: RelayerEngine): Server {
     // Standard CORS headers for browser dApps
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Idempotency-Key');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -22,12 +22,14 @@ export function createRelayerServer(engine: RelayerEngine): Server {
     }
 
     const url = req.url ?? '/';
+    const idempotencyHeader = req.headers['idempotency-key'] as string | undefined;
 
     try {
       if (req.method === 'GET' && url === '/health') {
         sendJson(res, 200, {
           status: 'ok',
           service: '@novakey/relayer-node',
+          uptimeSeconds: Math.floor(process.uptime()),
           metrics: engine.getMetrics(),
         });
         return;
@@ -42,8 +44,47 @@ export function createRelayerServer(engine: RelayerEngine): Server {
           throw new RelayerError('Invalid JSON payload', 400, 'INVALID_JSON');
         }
 
+        if (idempotencyHeader && !parsed.idempotencyKey) {
+          parsed.idempotencyKey = idempotencyHeader;
+        }
+
         const receipt = await engine.relay(parsed);
         sendJson(res, 200, receipt);
+        return;
+      }
+
+      if (req.method === 'POST' && url === '/api/v1/simulate') {
+        const rawBody = await readRequestBody(req);
+        let parsed: RelayRequest;
+        try {
+          parsed = JSON.parse(rawBody) as RelayRequest;
+        } catch {
+          throw new RelayerError('Invalid JSON payload', 400, 'INVALID_JSON');
+        }
+
+        const simResult = engine.simulate(parsed);
+        sendJson(res, 200, simResult);
+        return;
+      }
+
+      if (req.method === 'GET' && url.startsWith('/api/v1/nonce/')) {
+        const walletAddress = url.slice('/api/v1/nonce/'.length);
+        const nextNonce = engine.getLatestNonce(walletAddress);
+        sendJson(res, 200, {
+          walletAddress,
+          nextNonce: nextNonce.toString(10),
+        });
+        return;
+      }
+
+      if (req.method === 'GET' && url.startsWith('/api/v1/history/')) {
+        const walletAddress = url.slice('/api/v1/history/'.length);
+        const receipts = engine.getWalletReceipts(walletAddress);
+        sendJson(res, 200, {
+          walletAddress,
+          count: receipts.length,
+          receipts,
+        });
         return;
       }
 
