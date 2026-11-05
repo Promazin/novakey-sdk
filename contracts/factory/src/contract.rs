@@ -105,6 +105,56 @@ impl FactoryContract {
         Ok(wallet_address)
     }
 
+    /// Deploy a seedless SmartWallet where the wallet contract itself is set as the owner.
+    ///
+    /// This removes the need for an external ed25519 keypair during onboarding,
+    /// enabling 100% passkey-native smart account creation.
+    pub fn deploy_self_owned_wallet(
+        env: Env,
+        credential_id: BytesN<16>,
+        public_key: BytesN<65>,
+        label: Bytes,
+    ) -> Result<Address, FactoryError> {
+        Self::require_initialized(&env)?;
+
+        if storage::load_wallet_address(&env, &credential_id).is_some() {
+            return Err(FactoryError::WalletAlreadyExists);
+        }
+
+        let wasm_hash = storage::get_wasm_hash(&env)
+            .ok_or(FactoryError::NotInitialized)?;
+
+        let salt = Self::derive_salt(&env, &credential_id);
+
+        let wallet_address = env
+            .deployer()
+            .with_current_contract(salt)
+            .deploy(wasm_hash);
+
+        // For a seedless passkey wallet, owner is the contract's own address
+        let init_args: Vec<Val> = soroban_sdk::vec![
+            &env,
+            wallet_address.to_val(),
+            credential_id.to_val(),
+            public_key.to_val(),
+            label.to_val(),
+        ];
+
+        env.invoke_contract::<()>(
+            &wallet_address,
+            &Symbol::new(&env, "initialize"),
+            init_args,
+        );
+
+        storage::save_wallet_address(&env, &credential_id, &wallet_address);
+        storage::bump_wallet_ttl(&env, &credential_id);
+        storage::bump_instance_ttl(&env);
+
+        events::wallet_deployed(&env, &wallet_address, &wallet_address, &credential_id);
+
+        Ok(wallet_address)
+    }
+
     // ── Admin operations ──────────────────────────────────────────────────────
 
     /// Update the SmartWallet WASM hash used for future deployments.

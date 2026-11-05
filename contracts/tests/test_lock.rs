@@ -178,6 +178,8 @@ fn test_locked_wallet_rejects_check_auth() {
             operation_hash: BytesN::from_array(&env, &op_hash_raw),
         },
         signature: BytesN::from_array(&env, &sig_bytes),
+        authenticator_data: soroban_sdk::Bytes::new(&env),
+        client_data_json: soroban_sdk::Bytes::new(&env),
     };
 
     // Lock the wallet

@@ -22,7 +22,9 @@ use soroban_sdk::{
     Address, Bytes, BytesN, Env,
 };
 
-use smart_wallet::{AuthPayload, SignaturePayload, SmartWalletContract, SmartWalletContractClient, SmartWalletError};
+use smart_wallet::{
+    AuthPayload, SignaturePayload, SmartWalletContract, SmartWalletContractClient, SmartWalletError,
+};
 
 // ── p256 imports (test-only) ──────────────────────────────────────────────────
 // The `p256` crate is a dependency only in dev-dependencies.
@@ -124,6 +126,8 @@ fn test_check_auth_valid_signature_advances_nonce() {
             operation_hash: BytesN::from_array(&env, &op_hash_raw),
         },
         signature: BytesN::from_array(&env, &sig_bytes),
+        authenticator_data: Bytes::new(&env),
+        client_data_json: Bytes::new(&env),
     };
 
     check_auth_shim(&env, &client, auth_payload).unwrap();
@@ -151,6 +155,8 @@ fn test_check_auth_replay_is_rejected() {
             operation_hash: BytesN::from_array(&env, &op_hash_raw),
         },
         signature: BytesN::from_array(&env, &sig_bytes),
+        authenticator_data: Bytes::new(&env),
+        client_data_json: Bytes::new(&env),
     };
 
     check_auth_shim(&env, &client, auth_payload.clone()).unwrap();
@@ -186,6 +192,8 @@ fn test_check_auth_wrong_signature_is_rejected() {
             operation_hash: BytesN::from_array(&env, &op_hash_raw),
         },
         signature: BytesN::from_array(&env, &sig_bytes),
+        authenticator_data: Bytes::new(&env),
+        client_data_json: Bytes::new(&env),
     };
 
     let result = check_auth_shim(&env, &client, auth_payload);
@@ -212,6 +220,8 @@ fn test_check_auth_unknown_credential_is_rejected() {
             operation_hash: BytesN::from_array(&env, &op_hash_raw),
         },
         signature: BytesN::from_array(&env, &sig_bytes),
+        authenticator_data: Bytes::new(&env),
+        client_data_json: Bytes::new(&env),
     };
 
     let result = check_auth_shim(&env, &client, auth_payload);
@@ -237,6 +247,8 @@ fn test_check_auth_wrong_nonce_is_rejected() {
             operation_hash: BytesN::from_array(&env, &op_hash_raw),
         },
         signature: BytesN::from_array(&env, &sig_bytes),
+        authenticator_data: Bytes::new(&env),
+        client_data_json: Bytes::new(&env),
     };
 
     let result = check_auth_shim(&env, &client, auth_payload);
@@ -262,6 +274,8 @@ fn test_check_auth_mismatched_operation_hash_is_rejected() {
             operation_hash: BytesN::from_array(&env, &op_hash_raw),
         },
         signature: BytesN::from_array(&env, &sig_bytes),
+        authenticator_data: Bytes::new(&env),
+        client_data_json: Bytes::new(&env),
     };
 
     // Simulate host requesting auth for a DIFFERENT operation hash (0xb2)
@@ -296,12 +310,117 @@ fn test_auth_publishes_success_event() {
             operation_hash: BytesN::from_array(&env, &op_hash_raw),
         },
         signature: BytesN::from_array(&env, &sig_bytes),
+        authenticator_data: Bytes::new(&env),
+        client_data_json: Bytes::new(&env),
     };
 
     check_auth_shim(&env, &client, auth_payload).unwrap();
 
     let events = env.events().all();
     assert!(events.len() >= 2);
+}
+
+/// WebAuthn envelope flow: authenticates a full WebAuthn authenticatorData + clientDataJSON assertion.
+#[test]
+fn test_check_auth_with_webauthn_envelope() {
+    use sha2::{Digest, Sha256};
+
+    let env = Env::default();
+    let key = TestKey::new();
+    let (client, cred_id) = setup_with_key(&env, &key);
+
+    let nonce = client.get_nonce();
+    let op_hash_raw = [0x77u8; 32];
+
+    // Challenge string encoded as URL-safe Base64 of op_hash_raw
+    // Since op_hash_raw is all 0x77 ("w"), its base64url is 43 chars
+    const URL_SAFE_ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut challenge_chars = [0u8; 43];
+    for i in 0..10 {
+        let b0 = op_hash_raw[i * 3] as usize;
+        let b1 = op_hash_raw[i * 3 + 1] as usize;
+        let b2 = op_hash_raw[i * 3 + 2] as usize;
+        challenge_chars[i * 4] = URL_SAFE_ALPHABET[(b0 >> 2) & 0x3f];
+        challenge_chars[i * 4 + 1] = URL_SAFE_ALPHABET[((b0 << 4) | (b1 >> 4)) & 0x3f];
+        challenge_chars[i * 4 + 2] = URL_SAFE_ALPHABET[((b1 << 2) | (b2 >> 6)) & 0x3f];
+        challenge_chars[i * 4 + 3] = URL_SAFE_ALPHABET[b2 & 0x3f];
+    }
+    let b0 = op_hash_raw[30] as usize;
+    let b1 = op_hash_raw[31] as usize;
+    challenge_chars[40] = URL_SAFE_ALPHABET[(b0 >> 2) & 0x3f];
+    challenge_chars[41] = URL_SAFE_ALPHABET[((b0 << 4) | (b1 >> 4)) & 0x3f];
+    challenge_chars[42] = URL_SAFE_ALPHABET[(b1 << 2) & 0x3f];
+    let challenge_str = core::str::from_utf8(&challenge_chars).unwrap();
+
+    let client_data_json_str = format!(
+        r#"{{"type":"webauthn.get","challenge":"{}","origin":"https://app.novakey.org","crossOrigin":false}}"#,
+        challenge_str
+    );
+    let client_data_bytes = client_data_json_str.as_bytes();
+    let client_data_hash = Sha256::digest(client_data_bytes);
+
+    // 37-byte authenticator data: 32-byte RP ID hash, flag 0x05 (UP | UV), 4-byte sign count 0
+    let mut auth_data = [0u8; 37];
+    auth_data[..32].copy_from_slice(&Sha256::digest(b"app.novakey.org"));
+    auth_data[32] = 0x05; // User Present & User Verified
+
+    // Digest that the passkey hardware enclave signs: SHA-256(authenticatorData || SHA-256(clientDataJSON))
+    let mut to_sign = [0u8; 69];
+    to_sign[..37].copy_from_slice(&auth_data);
+    to_sign[37..].copy_from_slice(&client_data_hash);
+
+    // `Signer::sign(&to_sign)` hashes `to_sign` with SHA-256 and signs the resulting 32-byte digest
+    use p256::ecdsa::{signature::Signer, Signature};
+    let sig: Signature = key.signing_key.sign(&to_sign);
+    let mut sig_bytes = [0u8; 64];
+    sig_bytes.copy_from_slice(&sig.to_bytes());
+
+    let auth_payload = AuthPayload {
+        credential_id: cred_id,
+        signed: SignaturePayload {
+            nonce,
+            operation_hash: BytesN::from_array(&env, &op_hash_raw),
+        },
+        signature: BytesN::from_array(&env, &sig_bytes),
+        authenticator_data: soroban_sdk::Bytes::from_slice(&env, &auth_data),
+        client_data_json: soroban_sdk::Bytes::from_slice(&env, client_data_bytes),
+    };
+
+    check_auth_shim(&env, &client, auth_payload).unwrap();
+    assert_eq!(client.get_nonce(), 1);
+}
+
+/// WebAuthn envelope flow: rejects when userPresent flag is not set.
+#[test]
+fn test_check_auth_webauthn_missing_up_flag_is_rejected() {
+    let env = Env::default();
+    let key = TestKey::new();
+    let (client, cred_id) = setup_with_key(&env, &key);
+
+    let nonce = client.get_nonce();
+    let op_hash_raw = [0x88u8; 32];
+
+    let client_data_json_str = r#"{"type":"webauthn.get","challenge":"fake","origin":"https://app.novakey.org"}"#;
+    let client_data_bytes = client_data_json_str.as_bytes();
+
+    // authenticator data with UP flag = 0
+    let mut auth_data = [0u8; 37];
+    auth_data[32] = 0x00;
+
+    let auth_payload = AuthPayload {
+        credential_id: cred_id,
+        signed: SignaturePayload {
+            nonce,
+            operation_hash: BytesN::from_array(&env, &op_hash_raw),
+        },
+        signature: BytesN::from_array(&env, &[0u8; 64]),
+        authenticator_data: soroban_sdk::Bytes::from_slice(&env, &auth_data),
+        client_data_json: soroban_sdk::Bytes::from_slice(&env, client_data_bytes),
+    };
+
+    let res = check_auth_shim(&env, &client, auth_payload);
+    assert_eq!(res.unwrap_err(), SmartWalletError::InvalidWebAuthnData);
 }
 
 // ── Test shim ─────────────────────────────────────────────────────────────────

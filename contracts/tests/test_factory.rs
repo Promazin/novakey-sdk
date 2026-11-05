@@ -139,6 +139,9 @@ fn test_deploy_wallet_uninitialized_returns_error() {
 
     let res = client.try_deploy_wallet(&owner, &cred_id, &public_key, &label);
     assert_eq!(res, Err(Ok(FactoryError::NotInitialized)));
+
+    let self_owned_res = client.try_deploy_self_owned_wallet(&cred_id, &public_key, &label);
+    assert_eq!(self_owned_res, Err(Ok(FactoryError::NotInitialized)));
 }
 
 #[test]

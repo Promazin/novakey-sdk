@@ -37,4 +37,6 @@ pub enum SmartWalletError {
     WalletLocked = 13,
     /// Caller is not authorized to execute this emergency action.
     Unauthorized = 14,
+    /// WebAuthn clientDataJSON verification failed (e.g. challenge mismatch or invalid authenticator flags).
+    InvalidWebAuthnData = 15,
 }
