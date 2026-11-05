@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { RelayerEngine, RelayerError } from './engine.ts';
-import type { RelayRequest } from './types.ts';
+import type { DeployRelayRequest, RelayRequest } from './types.ts';
 
 /**
  * Create a lightweight Node.js HTTP server exposing the NovaKey gas-sponsoring relayer API:
@@ -49,6 +49,20 @@ export function createRelayerServer(engine: RelayerEngine): Server {
         }
 
         const receipt = await engine.relay(parsed);
+        sendJson(res, 200, receipt);
+        return;
+      }
+
+      if (req.method === 'POST' && url === '/api/v1/deploy') {
+        const rawBody = await readRequestBody(req);
+        let parsed: DeployRelayRequest;
+        try {
+          parsed = JSON.parse(rawBody) as DeployRelayRequest;
+        } catch {
+          throw new RelayerError('Invalid JSON payload', 400, 'INVALID_JSON');
+        }
+
+        const receipt = await engine.deploy(parsed);
         sendJson(res, 200, receipt);
         return;
       }

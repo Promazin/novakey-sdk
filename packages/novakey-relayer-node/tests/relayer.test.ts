@@ -192,3 +192,38 @@ test('RelayerEngine idempotency deduplication caches and prevents replay errors 
   assert.strictEqual(metrics.totalRelayed, 1);
   assert.strictEqual(metrics.idempotencyHits, 1);
 });
+
+test('RelayerEngine and HTTP server handle wallet deployment relay requests', async () => {
+  const engine = new RelayerEngine();
+  const server = createRelayerServer(engine);
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const port = (server.address() as AddressInfo).port;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const deployReq = {
+      contractId: 'CFACTORY0000000000000000000000000000000000000000000000000',
+      functionName: 'deploy_self_owned_wallet' as const,
+      args: {
+        credentialIdHex: '0102030405060708090a0b0c0d0e0f10',
+        publicKeyHex: '04' + '5a'.repeat(64),
+        label: 'My Device',
+      },
+      predictedAddress: 'CUSERWALLET00000000000000000000000000000000000000000000',
+    };
+
+    const res = await fetch(`${baseUrl}/api/v1/deploy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deployReq),
+    });
+
+    assert.strictEqual(res.status, 200);
+    const receipt = (await res.json()) as { status: string; contractAddress: string; txHash: string };
+    assert.strictEqual(receipt.status, 'SUCCESS');
+    assert.strictEqual(receipt.contractAddress, deployReq.predictedAddress);
+    assert.strictEqual(typeof receipt.txHash, 'string');
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

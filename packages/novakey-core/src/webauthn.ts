@@ -34,13 +34,13 @@ export function createRegistrationOptions(
   const userId = params.userId || crypto.getRandomValues(new Uint8Array(16));
 
   return {
-    challenge,
+    challenge: challenge as BufferSource,
     rp: {
       name: params.relyingPartyName,
       id: params.relyingPartyId,
     },
     user: {
-      id: userId,
+      id: userId as BufferSource,
       name: params.userName,
       displayName: params.userDisplayName || params.userName,
     },
@@ -68,12 +68,12 @@ export function createAssertionOptions(
 ): PublicKeyCredentialRequestOptions {
   const allowCredentials = params.allowedCredentialIds?.map((id) => ({
     type: 'public-key' as const,
-    id: id,
+    id: id as BufferSource,
     transports: ['internal' as const],
   }));
 
   return {
-    challenge: params.challenge,
+    challenge: params.challenge as BufferSource,
     rpId: params.relyingPartyId,
     userVerification: params.userVerification || 'required',
     allowCredentials,

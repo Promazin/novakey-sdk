@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "build": "pnpm -r run build",
     "test": "node --test packages/*/tests/*.test.ts",
     "test:contracts": "cd contracts && cargo test",
     "build:contracts": "cd contracts && cargo build --target wasm32-unknown-unknown --release",
@@ -21,5 +22,9 @@
     "smart-wallet",
     "account-abstraction"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
 }

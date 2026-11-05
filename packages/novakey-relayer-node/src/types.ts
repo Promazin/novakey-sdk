@@ -1,4 +1,4 @@
-import type { SerializedAuthPayload } from '../../novakey-core/src/index.ts';
+import type { SerializedAuthPayload } from '@novakey/core';
 
 /**
  * Payload submitted by a client SDK to the gas-sponsoring relayer.
@@ -73,6 +73,39 @@ export interface RelayerPolicyConfig {
  */
 export type RelayerSubmitter = (
   request: RelayRequest
+) => Promise<{ txHash: string; sponsoredFeeStroops?: number }>;
+
+/**
+ * Request payload for relaying a deterministic contract deployment via Factory.
+ */
+export interface DeployRelayRequest {
+  contractId: string;
+  functionName: 'deploy_wallet' | 'deploy_self_owned_wallet';
+  args: {
+    owner?: string;
+    credentialIdHex: string;
+    publicKeyHex: string;
+    label: string;
+  };
+  predictedAddress: string;
+  requestedFeeStroops?: number;
+}
+
+/**
+ * Receipt returned after relaying a contract deployment.
+ */
+export interface DeployRelayReceipt {
+  txHash: string;
+  contractAddress: string;
+  status: 'SUCCESS' | 'FAILED';
+  sponsoredFeeStroops: number;
+}
+
+/**
+ * Custom deployment submission handler for broadcasting factory deployment transactions.
+ */
+export type DeploySubmitter = (
+  request: DeployRelayRequest
 ) => Promise<{ txHash: string; sponsoredFeeStroops?: number }>;
 
 /**

@@ -4,8 +4,11 @@ import {
   isLowSSignature,
   NovaKeyWalletClient,
   sha256,
-} from '../../novakey-core/src/index.ts';
+} from '@novakey/core';
 import type {
+  DeployRelayReceipt,
+  DeployRelayRequest,
+  DeploySubmitter,
   RelayerMetrics,
   RelayerPolicyConfig,
   RelayerSubmitter,
@@ -38,6 +41,7 @@ export class RelayerEngine {
   private readonly policy: Required<RelayerPolicyConfig>;
   private readonly client: NovaKeyWalletClient;
   private readonly submitter?: RelayerSubmitter;
+  private readonly deploySubmitter?: DeploySubmitter;
   private readonly receipts = new Map<string, RelayReceipt>();
   private readonly consumedNonces = new Set<string>();
   private readonly rateLimitWindows = new Map<string, number[]>();
@@ -51,7 +55,8 @@ export class RelayerEngine {
 
   constructor(
     policy: RelayerPolicyConfig = {},
-    submitter?: RelayerSubmitter
+    submitter?: RelayerSubmitter,
+    deploySubmitter?: DeploySubmitter
   ) {
     this.policy = {
       maxFeeStroops: policy.maxFeeStroops ?? 100_000,
@@ -60,6 +65,7 @@ export class RelayerEngine {
       requireCanonicalLowS: policy.requireCanonicalLowS ?? true,
     };
     this.submitter = submitter;
+    this.deploySubmitter = deploySubmitter;
     this.client = new NovaKeyWalletClient({
       network: 'testnet',
       rpcUrl: 'https://soroban-testnet.stellar.org',
@@ -219,6 +225,42 @@ export class RelayerEngine {
       this.totalRejected += 1;
       throw err;
     }
+  }
+
+  /**
+   * Process and sponsor a factory contract deployment request.
+   */
+  public async deploy(request: DeployRelayRequest): Promise<DeployRelayReceipt> {
+    if (!request || !request.predictedAddress || !request.contractId) {
+      throw new RelayerError('Invalid deploy request parameters', 400, 'INVALID_DEPLOY_REQUEST');
+    }
+
+    const defaultFee = request.requestedFeeStroops ?? Math.min(25_000, this.policy.maxFeeStroops);
+    let txHash: string;
+    let sponsoredFeeStroops = defaultFee;
+
+    if (this.deploySubmitter) {
+      const res = await this.deploySubmitter(request);
+      txHash = res.txHash;
+      if (res.sponsoredFeeStroops !== undefined) {
+        sponsoredFeeStroops = res.sponsoredFeeStroops;
+      }
+    } else {
+      const preimage = new TextEncoder().encode(
+        `${request.contractId}:${request.functionName}:${request.predictedAddress}:${request.args.credentialIdHex}`
+      );
+      txHash = bytesToHex(sha256(preimage));
+    }
+
+    this.totalRelayed += 1;
+    this.totalFeeSponsoredStroops += sponsoredFeeStroops;
+
+    return {
+      txHash,
+      contractAddress: request.predictedAddress,
+      status: 'SUCCESS',
+      sponsoredFeeStroops,
+    };
   }
 
   /**

@@ -2,7 +2,7 @@ import {
   createAssertionOptions,
   createRegistrationOptions,
   derToRawSignature,
-} from '../../novakey-core/src/index.ts';
+} from '@novakey/core';
 import type {
   AuthenticatorAdapter,
   AuthenticatorAssertionResult,
