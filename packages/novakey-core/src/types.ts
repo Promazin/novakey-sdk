@@ -67,6 +67,10 @@ export interface AuthPayload {
   signed: SignaturePayload;
   /** 64-byte compact signature (r || s), low-s normalized */
   signature: Uint8Array;
+  /** Optional raw WebAuthn authenticatorData */
+  authenticatorData?: Uint8Array;
+  /** Optional raw WebAuthn clientDataJSON */
+  clientDataJson?: Uint8Array;
 }
 
 /**
@@ -81,6 +85,41 @@ export interface SerializedAuthPayload {
   operationHashHex: string;
   /** 128-character hex-encoded compact signature (64 bytes) */
   signatureHex: string;
+  /** Optional hex-encoded authenticatorData */
+  authenticatorDataHex?: string;
+  /** Optional hex-encoded clientDataJSON */
+  clientDataJsonHex?: string;
+}
+
+/**
+ * Parameters for deploying a new smart wallet via FactoryContract.
+ */
+export interface DeployWalletParams {
+  /** 16-byte credential ID */
+  credentialId: Uint8Array;
+  /** 65-byte uncompressed secp256r1 public key */
+  publicKey: Uint8Array;
+  /** Human-readable device label */
+  label: string;
+  /** Optional owner address; if omitted, deploys as a seedless self-owned smart wallet */
+  owner?: string;
+  /** Optional factory contract override */
+  factoryContractId?: string;
+}
+
+/**
+ * Standard invocation payload for deploying a smart wallet on-chain via Factory.
+ */
+export interface DeployWalletCall {
+  contractId: string;
+  functionName: 'deploy_wallet' | 'deploy_self_owned_wallet';
+  args: {
+    owner?: string;
+    credentialIdHex: string;
+    publicKeyHex: string;
+    label: string;
+  };
+  predictedAddress: string;
 }
 
 /**

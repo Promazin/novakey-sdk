@@ -9,6 +9,8 @@ import {
 } from './crypto.ts';
 import type {
   AuthPayload,
+  DeployWalletCall,
+  DeployWalletParams,
   NovaKeyConfig,
   OperationPayloadResult,
   PasskeyCredential,
@@ -52,6 +54,8 @@ export class NovaKeyWalletClient {
     nonce: bigint;
     operationHash: Uint8Array;
     signature: Uint8Array;
+    authenticatorData?: Uint8Array;
+    clientDataJson?: Uint8Array;
   }): AuthPayload {
     if (params.credentialId.length !== 16) {
       throw new Error('Credential ID must be exactly 16 bytes');
@@ -72,6 +76,8 @@ export class NovaKeyWalletClient {
       credentialId: params.credentialId,
       signed,
       signature: params.signature,
+      authenticatorData: params.authenticatorData,
+      clientDataJson: params.clientDataJson,
     };
   }
 
@@ -99,6 +105,12 @@ export class NovaKeyWalletClient {
       nonce: payload.signed.nonce.toString(10),
       operationHashHex: bytesToHex(payload.signed.operationHash),
       signatureHex: bytesToHex(payload.signature),
+      ...(payload.authenticatorData
+        ? { authenticatorDataHex: bytesToHex(payload.authenticatorData) }
+        : {}),
+      ...(payload.clientDataJson
+        ? { clientDataJsonHex: bytesToHex(payload.clientDataJson) }
+        : {}),
     };
   }
 
@@ -111,6 +123,12 @@ export class NovaKeyWalletClient {
       nonce: BigInt(serialized.nonce),
       operationHash: hexToBytes(serialized.operationHashHex),
       signature: hexToBytes(serialized.signatureHex),
+      authenticatorData: serialized.authenticatorDataHex
+        ? hexToBytes(serialized.authenticatorDataHex)
+        : undefined,
+      clientDataJson: serialized.clientDataJsonHex
+        ? hexToBytes(serialized.clientDataJsonHex)
+        : undefined,
     });
   }
 
@@ -144,9 +162,45 @@ export class NovaKeyWalletClient {
   }
 
   /**
+   * Build the factory contract deployment call payload.
+   */
+  public buildDeployWalletCall(params: DeployWalletParams): DeployWalletCall {
+    const factory = params.factoryContractId ?? this.config.factoryContractId;
+    if (!factory) {
+      throw new Error(
+        'Factory contract ID must be configured or passed to buildDeployWalletCall'
+      );
+    }
+    const predictedAddress = this.predictWalletAddress(params.credentialId, factory);
+    const isSelfOwned = !params.owner || params.owner === predictedAddress;
+
+    return {
+      contractId: factory,
+      functionName: isSelfOwned ? 'deploy_self_owned_wallet' : 'deploy_wallet',
+      args: {
+        ...(isSelfOwned ? {} : { owner: params.owner }),
+        credentialIdHex: bytesToHex(params.credentialId),
+        publicKeyHex: bytesToHex(params.publicKey),
+        label: params.label,
+      },
+      predictedAddress,
+    };
+  }
+
+  /**
    * Verify an `AuthPayload` against a 65-byte uncompressed public key.
+   * Supports both direct payload digest and WebAuthn envelope verification.
    */
   public verifyAuthPayload(payload: AuthPayload, publicKey: Uint8Array): boolean {
+    if (payload.authenticatorData && payload.clientDataJson) {
+      const clientDataHash = sha256(payload.clientDataJson);
+      const toSign = new Uint8Array(payload.authenticatorData.length + clientDataHash.length);
+      toSign.set(payload.authenticatorData, 0);
+      toSign.set(clientDataHash, payload.authenticatorData.length);
+      const finalDigest = sha256(toSign);
+      return verifySecp256r1Digest(publicKey, finalDigest, payload.signature);
+    }
+
     const payloadHash = this.hashOperationPayload(
       payload.signed.nonce,
       payload.signed.operationHash

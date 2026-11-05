@@ -342,3 +342,47 @@ test('NovaKeyWalletClient serializeCredential and deserializeCredential roundtri
   const restored = client.deserializeCredential(serialized);
   assert.deepStrictEqual(restored, credential);
 });
+
+test('NovaKeyWalletClient roundtrips WebAuthn envelope data and builds factory deploy calls', () => {
+  const client = new NovaKeyWalletClient({
+    network: 'testnet',
+    rpcUrl: 'https://soroban-testnet.stellar.org',
+    factoryContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM',
+  });
+
+  const credentialId = new Uint8Array(16).fill(0x11);
+  const operationHash = new Uint8Array(32).fill(0x22);
+  const signature = new Uint8Array(64).fill(0x33);
+  const authenticatorData = new Uint8Array(37).fill(0x44);
+  const clientDataJson = new TextEncoder().encode('{"type":"webauthn.get","challenge":"test"}');
+
+  const authPayload = client.buildAuthPayload({
+    credentialId,
+    nonce: 42n,
+    operationHash,
+    signature,
+    authenticatorData,
+    clientDataJson,
+  });
+
+  const serialized = client.serializeAuthPayload(authPayload);
+  assert.strictEqual(typeof serialized.authenticatorDataHex, 'string');
+  assert.strictEqual(typeof serialized.clientDataJsonHex, 'string');
+
+  const deserialized = client.deserializeAuthPayload(serialized);
+  assert.deepStrictEqual(deserialized.authenticatorData, authenticatorData);
+  assert.deepStrictEqual(deserialized.clientDataJson, clientDataJson);
+  assert.strictEqual(deserialized.signed.nonce, 42n);
+
+  // Deploy call builder for seedless self-owned wallet
+  const deployCall = client.buildDeployWalletCall({
+    credentialId,
+    publicKey: new Uint8Array(65).fill(0x04),
+    label: 'Pixel 8 StrongBox',
+  });
+
+  assert.strictEqual(deployCall.functionName, 'deploy_self_owned_wallet');
+  assert.strictEqual(deployCall.contractId, 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM');
+  assert.strictEqual(deployCall.args.owner, undefined);
+  assert.strictEqual(typeof deployCall.predictedAddress, 'string');
+});
