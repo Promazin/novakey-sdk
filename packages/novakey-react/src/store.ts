@@ -5,6 +5,7 @@ import {
   parseRegistrationResult,
   sha256,
 } from '../../novakey-core/src/index.ts';
+import { BrowserWebAuthnAdapter } from './adapter.ts';
 import type {
   AuthenticatorAdapter,
   CreateWalletParams,
@@ -45,7 +46,11 @@ export class NovaKeyStore {
       factoryContractId: props.factoryContractId,
       relayerUrl: props.relayerUrl,
     });
-    this.authenticator = props.authenticator;
+    this.authenticator =
+      props.authenticator ??
+      (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'credentials' in navigator
+        ? new BrowserWebAuthnAdapter()
+        : undefined);
   }
 
   /**
@@ -94,6 +99,26 @@ export class NovaKeyStore {
         ? this.client.predictWalletAddress(credential.credentialId)
         : encodeContractAddress(salt);
 
+      // Optionally dispatch on-chain wallet deployment via Relayer if requested
+      if (params.deployOnCreate && this.client.config.relayerUrl && this.client.config.factoryContractId) {
+        const deployCall = this.client.buildDeployWalletCall({
+          credentialId: credential.credentialId,
+          publicKey: credential.publicKey,
+          label: credential.label,
+        });
+
+        const deployRes = await fetch(`${this.client.config.relayerUrl}/api/v1/deploy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(deployCall),
+        });
+
+        if (!deployRes.ok) {
+          const errBody = (await deployRes.json().catch(() => ({}))) as { error?: string };
+          throw new Error(errBody.error ?? `Wallet deployment failed with HTTP ${deployRes.status}`);
+        }
+      }
+
       this.updateState({
         address,
         credential,
@@ -134,11 +159,21 @@ export class NovaKeyStore {
       );
 
       let signature: Uint8Array;
+      let authenticatorData: Uint8Array | undefined;
+      let clientDataJson: Uint8Array | undefined;
+
       if (this.authenticator) {
-        signature = await this.authenticator.sign(
+        const signResult = await this.authenticator.sign(
           payloadDigest,
           this.state.credential.credentialId
         );
+        if (signResult instanceof Uint8Array) {
+          signature = signResult;
+        } else {
+          signature = signResult.signature;
+          authenticatorData = signResult.authenticatorData;
+          clientDataJson = signResult.clientDataJson;
+        }
       } else {
         throw new Error('No WebAuthn authenticator adapter available for signing');
       }
@@ -148,6 +183,8 @@ export class NovaKeyStore {
         nonce: currentNonce,
         operationHash,
         signature,
+        authenticatorData,
+        clientDataJson,
       });
 
       const serialized = this.client.serializeAuthPayload(authPayload);

@@ -195,3 +195,68 @@ test('useEmergencyLock manages freeze state and recovers seamlessly', async () =
   // Automatically unlocked upon guardian recovery
   assert.strictEqual(useEmergencyLock().isLocked, false);
 });
+
+test('BrowserWebAuthnAdapter handles WebAuthn ceremonies and envelope signing', async () => {
+  const { BrowserWebAuthnAdapter } = await import('../src/index.ts');
+  const { rawToDerSignature } = await import('../../novakey-core/src/index.ts');
+  const adapter = new BrowserWebAuthnAdapter({ rpId: 'example.com' });
+
+  // Mock navigator.credentials
+  const originalCredentialsDescriptor = Object.getOwnPropertyDescriptor(globalThis.navigator, 'credentials');
+  const mockPublicKeyBytes = new Uint8Array(65);
+  mockPublicKeyBytes[0] = 0x04;
+  mockPublicKeyBytes.fill(0x33, 1);
+
+  const rawSig = new Uint8Array(64);
+  rawSig.fill(0x01, 0, 32);
+  rawSig.fill(0x02, 32, 64);
+  const derSig = rawToDerSignature(rawSig);
+
+  Object.defineProperty(globalThis.navigator, 'credentials', {
+    value: {
+      async create() {
+        return {
+          rawId: new Uint8Array(16).fill(0x08).buffer,
+          response: {
+            getPublicKey: () => null,
+            attestationObject: mockPublicKeyBytes.buffer,
+          },
+        };
+      },
+      async get() {
+        return {
+          response: {
+            signature: derSig.buffer,
+            authenticatorData: new Uint8Array(37).fill(0x05).buffer,
+            clientDataJSON: new TextEncoder().encode('{"type":"webauthn.get","challenge":"abc"}').buffer,
+          },
+        };
+      },
+    },
+    configurable: true,
+  });
+
+  try {
+    const regResult = await adapter.register({
+      relyingPartyName: 'NovaKey Demo',
+      userName: 'alice',
+      label: 'Chrome TouchID',
+    });
+    assert.strictEqual(regResult.label, 'Chrome TouchID');
+    assert.strictEqual(regResult.rawId.length, 16);
+
+    const signResult = await adapter.sign(new Uint8Array(32), regResult.rawId);
+    if (signResult instanceof Uint8Array) {
+      assert.fail('Expected AuthenticatorAssertionResult');
+    }
+    assert.strictEqual(signResult.signature.length, 64);
+    assert.strictEqual(signResult.authenticatorData?.length, 37);
+    assert.ok(signResult.clientDataJson);
+  } finally {
+    if (originalCredentialsDescriptor) {
+      Object.defineProperty(globalThis.navigator, 'credentials', originalCredentialsDescriptor);
+    } else {
+      delete (globalThis.navigator as any).credentials;
+    }
+  }
+});

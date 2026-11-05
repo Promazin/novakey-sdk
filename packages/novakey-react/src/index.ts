@@ -5,5 +5,6 @@
  */
 
 export * from './types.ts';
+export * from './adapter.ts';
 export * from './store.ts';
 export * from './hooks.ts';

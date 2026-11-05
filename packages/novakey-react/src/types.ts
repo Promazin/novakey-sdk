@@ -11,6 +11,8 @@ export interface CreateWalletParams {
   userName: string;
   userDisplayName?: string;
   label?: string;
+  /** Automatically trigger on-chain deployment via relayer upon creation */
+  deployOnCreate?: boolean;
 }
 
 /**
@@ -35,6 +37,15 @@ export interface SponsoredTxReceipt {
 }
 
 /**
+ * Result returned by an AuthenticatorAdapter assertion.
+ */
+export interface AuthenticatorAssertionResult {
+  signature: Uint8Array;
+  authenticatorData?: Uint8Array;
+  clientDataJson?: Uint8Array;
+}
+
+/**
  * Pluggable authenticator adapter so applications and tests can supply
  * browser WebAuthn (`navigator.credentials`), React Native biometrics,
  * or deterministic hardware enclave mocks.
@@ -45,7 +56,10 @@ export interface AuthenticatorAdapter {
     publicKeyBytes: Uint8Array;
     label: string;
   }>;
-  sign(payloadHash: Uint8Array, credentialId: Uint8Array): Promise<Uint8Array>;
+  sign(
+    payloadHash: Uint8Array,
+    credentialId: Uint8Array
+  ): Promise<Uint8Array | AuthenticatorAssertionResult>;
 }
 
 /**
