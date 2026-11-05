@@ -4,7 +4,7 @@ import {
   isLowSSignature,
   NovaKeyWalletClient,
   sha256,
-} from '@novakey/core';
+} from '../../novakey-core/src/index.ts';
 import type {
   DeployRelayReceipt,
   DeployRelayRequest,

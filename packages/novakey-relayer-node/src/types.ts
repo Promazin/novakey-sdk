@@ -1,4 +1,4 @@
-import type { SerializedAuthPayload } from '@novakey/core';
+import type { SerializedAuthPayload } from '../../novakey-core/src/index.ts';
 
 /**
  * Payload submitted by a client SDK to the gas-sponsoring relayer.

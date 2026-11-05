@@ -4,7 +4,7 @@ import {
   NovaKeyWalletClient,
   parseRegistrationResult,
   sha256,
-} from '@novakey/core';
+} from '../../novakey-core/src/index.ts';
 import { BrowserWebAuthnAdapter } from './adapter.ts';
 import type {
   AuthenticatorAdapter,

@@ -1,7 +1,7 @@
 import type {
   NovaKeyConfig,
   PasskeyCredential,
-} from '@novakey/core';
+} from '../../novakey-core/src/index.ts';
 
 /**
  * Parameters passed to `createWallet`.
